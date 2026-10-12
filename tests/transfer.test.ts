@@ -32,7 +32,7 @@ async function git(cwd: string, ...args: string[]) {
   return (await exec("git", args, { cwd })).stdout;
 }
 before(async () => {
-  root = await fs.mkdtemp(path.join(tmpdir(), "sync-test-"));
+  root = await fs.mkdtemp(path.join(tmpdir(), "transfer-test-"));
   sourceHome = path.join(root, "source-home");
   targetHome = path.join(root, "target-home");
   repo = path.join(root, "repo");
@@ -71,8 +71,8 @@ before(async () => {
   }
   await fs.mkdir(repo);
   await git(repo, "init", "-b", "main");
-  await git(repo, "config", "user.email", "sync@example.test");
-  await git(repo, "config", "user.name", "Sync Test");
+  await git(repo, "config", "user.email", "transfer@example.test");
+  await git(repo, "config", "user.name", "Transfer Test");
   await fs.writeFile(path.join(repo, "tracked.txt"), "original\n");
   await fs.writeFile(path.join(repo, "deleted.txt"), "delete me\n");
   await fs.writeFile(path.join(repo, ".gitignore"), ".env\n");
@@ -309,7 +309,7 @@ test("moving a managed worktree with ignored files is refused before copy", asyn
     "--new-branch",
     "managed-transfer",
     "--worktree-slug",
-    "sync-managed",
+    "transfer-managed",
   );
   await fs.writeFile(path.join(w.cwd, ".env"), "keep local");
   await assert.rejects(

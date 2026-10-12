@@ -1,4 +1,4 @@
-# Sync interface
+# Transfer interface
 
 This surface inherits Paseo's existing native plugin design system. Operate mode: the task is a verified workspace transfer.
 

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useRpc, type PluginSurfaceProps } from "@getpaseo/plugin/client";
+import {
+  useRpc,
+  type PluginSurfaceProps,
+  type PluginButtonContentProps,
+} from "@getpaseo/plugin/client";
 import {
   hostsRpc,
   listRpc,
@@ -11,12 +15,29 @@ import {
 } from "../shared/rpc";
 import type { Plan } from "../shared/types";
 
-export function SyncSurface({
+const popupRuns = new Map<string, string>();
+
+export function TransferPopover(props: PluginButtonContentProps) {
+  return (
+    <TransferSurface
+      {...props}
+      initialWorkspaceId={props.workspaceId}
+      workspaceScoped
+    />
+  );
+}
+
+export function TransferSurface({
   theme,
   layout,
   host,
   navigation,
-}: PluginSurfaceProps) {
+  initialWorkspaceId = "",
+  workspaceScoped = false,
+}: PluginSurfaceProps & {
+  initialWorkspaceId?: string;
+  workspaceScoped?: boolean;
+}) {
   const colors = theme.colors;
   const hosts = useRpc(hostsRpc),
     list = useRpc(listRpc),
@@ -27,11 +48,14 @@ export function SyncSurface({
   const [home, setHome] = useState("");
   const [identityFile, setIdentityFile] = useState("");
   const [direction, setDirection] = useState<"push" | "pull">("push");
-  const [workspaceId, setWorkspaceId] = useState("");
+  const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId);
   const [destination, setDestination] = useState("");
   const [mode, setMode] = useState<"copy" | "move">("copy");
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [runId, setRunId] = useState("");
+  const popupKey = workspaceScoped ? `${host.id}:${initialWorkspaceId}` : "";
+  const [runId, setRunId] = useState(() => popupRuns.get(popupKey) ?? "");
+  const [advanced, setAdvanced] = useState(false);
+
   const endpoint = {
     target: remote.trim(),
     ...(home.trim() ? { home: home.trim() } : {}),
@@ -40,35 +64,42 @@ export function SyncSurface({
   const source = direction === "push" ? { target: "" } : endpoint,
     target = direction === "push" ? endpoint : { target: "" };
   const suggestions = useQuery({
-    queryKey: ["sync", host.id, "hosts"],
+    queryKey: ["transfer", host.id, "hosts"],
     queryFn: () => hosts({}),
     staleTime: 60_000,
   });
   const workspaces = useQuery({
-    queryKey: ["sync", host.id, "workspaces", source],
+    queryKey: ["transfer", host.id, "workspaces", source],
     queryFn: () => list({ endpoint: source }),
     enabled: direction === "push" || !!remote.trim(),
   });
   const makePreview = useMutation({
     mutationFn: () =>
       preview({ source, target, workspaceId, destination, mode }),
-    onSuccess: setPlan,
+    onSuccess: (data) => {
+      setPlan(data);
+      setRunId("");
+      if (popupKey) popupRuns.delete(popupKey);
+    },
   });
   const transfer = useMutation({
     mutationFn: () => run({ planId: plan!.id }),
     onSuccess: (data) => {
       setRunId(data.runId);
+      if (popupKey) popupRuns.set(popupKey, data.runId);
       setPlan(null);
     },
   });
   const progress = useQuery({
-    queryKey: ["sync", host.id, "run", runId],
+    queryKey: ["transfer", host.id, "run", runId],
     queryFn: () => status({ runId }),
     enabled: !!runId,
     refetchInterval: (q) => (q.state.data?.state === "running" ? 1000 : false),
   });
   const running =
-    !!runId && (!progress.data || progress.data.state === "running");
+    !!runId &&
+    !progress.isError &&
+    (!progress.data || progress.data.state === "running");
   const locked = running || transfer.isPending || makePreview.isPending;
   useEffect(() => {
     setPlan(null);
@@ -76,10 +107,20 @@ export function SyncSurface({
     transfer.reset();
   }, [remote, home, identityFile, direction, workspaceId, destination, mode]);
   useEffect(() => {
-    setWorkspaceId("");
+    setWorkspaceId(initialWorkspaceId);
     setPlan(null);
-    setRunId("");
-  }, [host.id, direction, remote, home]);
+    if (!workspaceScoped) setRunId("");
+  }, [host.id, direction, remote, home, initialWorkspaceId, workspaceScoped]);
+  const selectedWorkspace = workspaces.data?.workspaces.find(
+    (item) => item.workspaceId === workspaceId,
+  );
+  useEffect(() => {
+    if (workspaceScoped && selectedWorkspace && !destination) {
+      setDestination(
+        `~/Projects/${selectedWorkspace.cwd.split("/").filter(Boolean).pop()}-transfer`,
+      );
+    }
+  }, [workspaceScoped, selectedWorkspace, destination]);
   const error =
     makePreview.error ??
     transfer.error ??
@@ -161,39 +202,183 @@ export function SyncSurface({
       </Text>
     </Pressable>
   );
-  return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.surface0 }}
-      contentContainerStyle={{
-        padding: layout.compact ? 16 : 28,
-        paddingBottom: 56,
-      }}
-    >
-      <View
-        style={{ maxWidth: 760, width: "100%", alignSelf: "center", gap: 24 }}
-      >
-        <View style={{ gap: 8 }}>
+  if (workspaceScoped && (plan || runId)) {
+    const result = progress.data?.result;
+    return (
+      <View>
+        <View style={{ gap: 16 }}>
           <Text
             accessibilityRole="header"
             style={{
               color: colors.foreground,
-              fontSize: 26,
+              fontSize: 20,
               fontWeight: "700",
             }}
           >
-            Continue on another host
+            {plan ? `Ready to ${plan.mode}` : "Workspace transfer"}
           </Text>
-          <Text
-            style={{
-              color: colors.foregroundMuted,
-              fontSize: 14,
-              lineHeight: 21,
-            }}
-          >
-            Bring a workspace’s Git history, local changes, and conversations
-            with you.
-          </Text>
+          {plan ? (
+            <>
+              <Text
+                style={{
+                  color: colors.foregroundMuted,
+                  fontSize: 14,
+                  lineHeight: 21,
+                }}
+              >
+                From {host.label} to {remote.trim()}
+              </Text>
+              <View style={{ gap: 8 }}>
+                <Text
+                  style={{
+                    color: colors.foreground,
+                    fontSize: 14,
+                    fontWeight: "600",
+                  }}
+                >
+                  {plan.workspace.name}
+                </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.foregroundMuted,
+                    fontSize: 14,
+                    lineHeight: 21,
+                  }}
+                >
+                  {plan.destination}
+                </Text>
+                <Text
+                  style={{
+                    color: colors.foregroundMuted,
+                    fontSize: 14,
+                    lineHeight: 21,
+                  }}
+                >
+                  {plan.files} files · {plan.sessions} conversations ·{" "}
+                  {(plan.bytes / 1024 / 1024).toFixed(1)} MiB
+                  {plan.branch ? ` · ${plan.branch}` : ""}
+                </Text>
+              </View>
+              <Text
+                style={{
+                  color: colors.foregroundMuted,
+                  fontSize: 14,
+                  lineHeight: 21,
+                }}
+              >
+                {plan.mode === "move"
+                  ? "Archive the source only after verification. Paseo may remove a managed source worktree."
+                  : "The source workspace stays open. The receiving host gets an independent checkout."}
+              </Text>
+              {error && (
+                <Text
+                  accessibilityRole="alert"
+                  style={{ color: colors.statusDanger }}
+                >
+                  {error.message}
+                </Text>
+              )}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {button("Edit transfer", () => setPlan(null), locked)}
+                {button(
+                  transfer.isPending
+                    ? "Starting transfer…"
+                    : `${plan.mode === "move" ? "Move" : "Copy"} workspace`,
+                  () => transfer.mutate(),
+                  locked,
+                  true,
+                )}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text
+                accessibilityLiveRegion="polite"
+                style={{
+                  color:
+                    progress.data?.state === "failed" || progress.error
+                      ? colors.statusDanger
+                      : colors.foreground,
+                  fontSize: 14,
+                  lineHeight: 21,
+                }}
+              >
+                {progress.error?.message ??
+                  progress.data?.message ??
+                  "Starting transfer…"}
+              </Text>
+              {result && (
+                <Text
+                  selectable
+                  style={{
+                    color: colors.foregroundMuted,
+                    fontSize: 14,
+                    lineHeight: 21,
+                  }}
+                >
+                  {result.cwd}
+                </Text>
+              )}
+              {running ? (
+                <Text
+                  style={{
+                    color: colors.foregroundMuted,
+                    fontSize: 13,
+                    lineHeight: 20,
+                  }}
+                >
+                  You can close this popup. The transfer continues on{" "}
+                  {host.label}; reopen Transfer to check progress.
+                </Text>
+              ) : (
+                <View style={{ alignSelf: "flex-start" }}>
+                  {progress.error
+                    ? button("Retry status", () => void progress.refetch())
+                    : button("Start another transfer", () => {
+                        setRunId("");
+                        popupRuns.delete(popupKey);
+                      })}
+                </View>
+              )}
+            </>
+          )}
         </View>
+      </View>
+    );
+  }
+  const form = (
+    <View
+      style={{
+        maxWidth: 760,
+        width: "100%",
+        alignSelf: "center",
+        gap: workspaceScoped ? 16 : 24,
+      }}
+    >
+      <View style={{ gap: 8 }}>
+        <Text
+          accessibilityRole="header"
+          style={{
+            color: colors.foreground,
+            fontSize: workspaceScoped ? 20 : 26,
+            fontWeight: "700",
+          }}
+        >
+          {workspaceScoped ? "Transfer workspace" : "Continue on another host"}
+        </Text>
+        <Text
+          style={{
+            color: colors.foregroundMuted,
+            fontSize: 14,
+            lineHeight: 21,
+          }}
+        >
+          Bring a workspace’s Git history, local changes, and conversations with
+          you.
+        </Text>
+      </View>
+      {!workspaceScoped && (
         <View style={{ gap: 12 }}>
           {label("Transfer direction")}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -211,36 +396,76 @@ export function SyncSurface({
             )}
           </View>
         </View>
-        <View style={{ gap: 10 }}>
-          {label(direction === "push" ? "Target host" : "Source host")}
-          {input(remote, setRemote, "SSH alias or user@host", "SSH host")}
-          {!!suggestions.data?.hosts.length && (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {suggestions.data.hosts.map((item) => (
-                <View key={item.target}>
-                  {button(
-                    item.label,
-                    () => setRemote(item.target),
-                    locked,
-                    remote === item.target,
-                  )}
-                </View>
-              ))}
-            </View>
-          )}
+      )}
+      {workspaceScoped && (
+        <View style={{ gap: 4 }}>
           <Text
             style={{
-              color: colors.foregroundMuted,
-              fontSize: 12,
-              lineHeight: 18,
+              color: colors.foreground,
+              fontSize: 14,
+              fontWeight: "600",
             }}
           >
-            Uses your SSH config and keys. Suggestions come from SSH config and
-            online Tailscale peers.
+            {selectedWorkspace?.name ?? "Loading this workspace…"}
           </Text>
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.foregroundMuted, fontSize: 12 }}
+          >
+            {selectedWorkspace?.cwd ?? `From ${host.label}`}
+          </Text>
+          {!workspaces.isPending && !workspaces.error && !selectedWorkspace && (
+            <Text
+              accessibilityRole="alert"
+              style={{ color: colors.statusDanger }}
+            >
+              This workspace is no longer open. Refresh the workspace and try
+              again.
+            </Text>
+          )}
+        </View>
+      )}
+      <View style={{ gap: 10 }}>
+        {label(direction === "push" ? "Target host" : "Source host")}
+        {input(remote, setRemote, "SSH alias or user@host", "SSH host")}
+        {!!suggestions.data?.hosts.length && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {suggestions.data.hosts.map((item) => (
+              <View key={item.target}>
+                {button(
+                  item.label,
+                  () => setRemote(item.target),
+                  locked,
+                  remote === item.target,
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+        <Text
+          style={{
+            color: colors.foregroundMuted,
+            fontSize: 12,
+            lineHeight: 18,
+          }}
+        >
+          Uses your SSH config and keys. Suggestions come from SSH config and
+          online Tailscale peers.
+        </Text>
+        {workspaceScoped && (
+          <View style={{ alignSelf: "flex-start" }}>
+            {button(
+              advanced ? "Hide connection options" : "Connection options",
+              () => setAdvanced(!advanced),
+              locked,
+            )}
+          </View>
+        )}
+        {(!workspaceScoped || advanced) && (
           <View
             style={{
-              flexDirection: layout.compact ? "column" : "row",
+              flexDirection:
+                workspaceScoped || layout.compact ? "column" : "row",
               gap: 12,
             }}
           >
@@ -263,7 +488,9 @@ export function SyncSurface({
               )}
             </View>
           </View>
-        </View>
+        )}
+      </View>
+      {!workspaceScoped && (
         <View style={{ gap: 8 }}>
           {label("Workspace")}
           {direction === "pull" && !remote.trim() ? (
@@ -349,31 +576,91 @@ export function SyncSurface({
             )}
           </View>
         </View>
-        <View>
-          {label("New directory on the target host")}
-          {input(
-            destination,
-            setDestination,
-            "~/Projects/my-workspace",
-            "Destination directory",
-          )}
+      )}
+      <View>
+        {label("New directory on the target host")}
+        {input(
+          destination,
+          setDestination,
+          "~/Projects/my-workspace",
+          "Destination directory",
+        )}
+        <Text
+          style={{
+            color: colors.foregroundMuted,
+            fontSize: 12,
+            lineHeight: 18,
+            marginTop: 8,
+          }}
+        >
+          Choose a directory that does not exist. The transferred checkout is
+          independent. Git-ignored files stay on the source.
+        </Text>
+      </View>
+      <View style={{ gap: 12 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {button("Copy", () => setMode("copy"), locked, mode === "copy")}
+          {button("Move", () => setMode("move"), locked, mode === "move")}
+        </View>
+        <Text
+          style={{
+            color: colors.foregroundMuted,
+            fontSize: 14,
+            lineHeight: 21,
+          }}
+        >
+          {mode === "move"
+            ? "Archive the source workspace after the destination is verified. Paseo may remove a managed source worktree."
+            : "Keep the source workspace open."}
+        </Text>
+      </View>
+      {error && (
+        <Text
+          accessibilityRole="alert"
+          style={{ color: colors.statusDanger, fontSize: 14, lineHeight: 21 }}
+        >
+          {error.message}
+        </Text>
+      )}
+      <View style={{ alignSelf: "flex-start" }}>
+        {button(
+          makePreview.isPending ? "Preparing preview…" : "Preview transfer",
+          () => makePreview.mutate(),
+          locked ||
+            !remote.trim() ||
+            !workspaceId ||
+            !destination.trim() ||
+            (workspaceScoped && !selectedWorkspace),
+          !plan,
+        )}
+      </View>
+      {plan && (
+        <View
+          style={{
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            paddingTop: 20,
+            gap: 12,
+          }}
+        >
           <Text
+            accessibilityRole="header"
             style={{
-              color: colors.foregroundMuted,
-              fontSize: 12,
-              lineHeight: 18,
-              marginTop: 8,
+              color: colors.foreground,
+              fontSize: 18,
+              fontWeight: "600",
             }}
           >
-            Choose a directory that does not exist. The transferred checkout is
-            independent. Git-ignored files stay on the source.
+            Ready to {plan.mode}
           </Text>
-        </View>
-        <View style={{ gap: 12 }}>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {button("Copy", () => setMode("copy"), locked, mode === "copy")}
-            {button("Move", () => setMode("move"), locked, mode === "move")}
-          </View>
+          <Text
+            selectable
+            style={{ color: colors.foreground, fontSize: 14, lineHeight: 21 }}
+          >
+            {plan.workspace.name}
+            {"\n"}
+            {plan.destination}
+          </Text>
           <Text
             style={{
               color: colors.foregroundMuted,
@@ -381,120 +668,89 @@ export function SyncSurface({
               lineHeight: 21,
             }}
           >
-            {mode === "move"
-              ? "Archive the source workspace after the destination is verified. Paseo may remove a managed source worktree."
-              : "Keep the source workspace open."}
+            {plan.files} files · {plan.sessions} conversations ·{" "}
+            {(plan.bytes / 1024 / 1024).toFixed(1)} MiB
+            {plan.branch ? ` · ${plan.branch}` : ""}
           </Text>
+          <View style={{ alignSelf: "flex-start" }}>
+            {button(
+              `${plan.mode === "move" ? "Move" : "Copy"} workspace`,
+              () => transfer.mutate(),
+              locked,
+              true,
+            )}
+          </View>
         </View>
-        {error && (
+      )}
+      {!!runId && (
+        <View
+          style={{
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            paddingTop: 20,
+            gap: 12,
+          }}
+        >
           <Text
-            accessibilityRole="alert"
-            style={{ color: colors.statusDanger, fontSize: 14, lineHeight: 21 }}
-          >
-            {error.message}
-          </Text>
-        )}
-        <View style={{ alignSelf: "flex-start" }}>
-          {button(
-            makePreview.isPending ? "Preparing preview…" : "Preview transfer",
-            () => makePreview.mutate(),
-            locked || !remote.trim() || !workspaceId || !destination.trim(),
-            !plan,
-          )}
-        </View>
-        {plan && (
-          <View
+            accessibilityLiveRegion="polite"
             style={{
-              borderTopWidth: 1,
-              borderTopColor: colors.border,
-              paddingTop: 20,
-              gap: 12,
+              color:
+                progress.data?.state === "failed"
+                  ? colors.statusDanger
+                  : colors.foreground,
+              fontSize: 14,
+              lineHeight: 21,
             }}
           >
-            <Text
-              accessibilityRole="header"
-              style={{
-                color: colors.foreground,
-                fontSize: 18,
-                fontWeight: "600",
-              }}
-            >
-              Ready to {plan.mode}
-            </Text>
+            {progress.data?.message ?? "Starting transfer…"}
+          </Text>
+          {progress.data?.result && (
             <Text
               selectable
-              style={{ color: colors.foreground, fontSize: 14, lineHeight: 21 }}
+              style={{ color: colors.foregroundMuted, fontSize: 13 }}
             >
-              {plan.workspace.name}
-              {"\n"}
-              {plan.destination}
+              {progress.data.result.cwd}
             </Text>
-            <Text
-              style={{
-                color: colors.foregroundMuted,
-                fontSize: 14,
-                lineHeight: 21,
-              }}
-            >
-              {plan.files} files · {plan.sessions} conversations ·{" "}
-              {(plan.bytes / 1024 / 1024).toFixed(1)} MiB
-              {plan.branch ? ` · ${plan.branch}` : ""}
-            </Text>
-            <View style={{ alignSelf: "flex-start" }}>
-              {button(
-                `${plan.mode === "move" ? "Move" : "Copy"} workspace`,
-                () => transfer.mutate(),
-                locked,
-                true,
-              )}
-            </View>
-          </View>
-        )}
-        {!!runId && (
-          <View
-            style={{
-              borderTopWidth: 1,
-              borderTopColor: colors.border,
-              paddingTop: 20,
-              gap: 12,
-            }}
-          >
-            <Text
-              accessibilityLiveRegion="polite"
-              style={{
-                color:
-                  progress.data?.state === "failed"
-                    ? colors.statusDanger
-                    : colors.foreground,
-                fontSize: 14,
-                lineHeight: 21,
-              }}
-            >
-              {progress.data?.message ?? "Starting transfer…"}
-            </Text>
-            {progress.data?.result && (
-              <Text
-                selectable
-                style={{ color: colors.foregroundMuted, fontSize: 13 }}
-              >
-                {progress.data.result.cwd}
-              </Text>
+          )}
+          {progress.data?.state === "done" &&
+            direction === "pull" &&
+            navigation &&
+            progress.data.result && (
+              <View style={{ alignSelf: "flex-start" }}>
+                {button("Open workspace", () =>
+                  navigation.openWorkspace({
+                    workspaceId: progress.data!.result!.workspaceId,
+                  }),
+                )}
+              </View>
             )}
-            {progress.data?.state === "done" &&
-              direction === "pull" &&
-              navigation &&
-              progress.data.result && (
-                <View style={{ alignSelf: "flex-start" }}>
-                  {button("Open workspace", () =>
-                    navigation.openWorkspace({
-                      workspaceId: progress.data!.result!.workspaceId,
-                    }),
-                  )}
-                </View>
-              )}
-          </View>
-        )}
-      </View>
+        </View>
+      )}
+      {workspaceScoped && running && (
+        <Text
+          style={{
+            color: colors.foregroundMuted,
+            fontSize: 12,
+            lineHeight: 18,
+          }}
+        >
+          You can close this popup. The transfer continues on {host.label};
+          reopen Transfer to check progress.
+        </Text>
+      )}
+    </View>
+  );
+  return workspaceScoped ? (
+    form
+  ) : (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.surface0 }}
+      contentContainerStyle={{
+        padding: layout.compact ? 16 : 28,
+        paddingBottom: 56,
+      }}
+    >
+      {form}
     </ScrollView>
   );
 }

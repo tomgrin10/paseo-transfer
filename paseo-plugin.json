@@ -1,5 +1,5 @@
 {
-  "id": "sync",
+  "id": "transfer",
   "requirements": {
     "paseo": ">=0.11.0"
   }

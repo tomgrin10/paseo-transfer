@@ -1,4 +1,4 @@
-# Working on Sync
+# Working on Transfer
 
 Use the official split Paseo plugin SDK: `index.server.ts` registers handlers, `index.client.tsx` registers the native surface, `shared/` contains runtime-neutral contracts. Never introduce a local SDK declaration shim.
 
@@ -10,4 +10,4 @@ A transfer must use a new destination. Preserve staged/unstaged changes and veri
 
 Run `npm run verify`. For provider or import changes, run `npm run test:live` with authenticated provider CLIs; use isolated homes, clean them afterward, and never print credentials. The SSH fixture uses a temporary loopback server and pins its host key. `scripts/ui-preview.tsx` renders the actual component with fixture RPC responses.
 
-Use host theme tokens and cross-platform React Native controls. Test desktop and compact layouts. Reload only this plugin (`paseo plugin reload sync`); restarting the main daemon kills active agents.
+Use host theme tokens and cross-platform React Native controls. Test desktop and compact layouts. Reload only this plugin (`paseo plugin reload transfer`); restarting the main daemon kills active agents.

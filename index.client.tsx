@@ -1,15 +1,25 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
-import { SyncSurface } from "./client/surface";
+import { TransferSurface, TransferPopover } from "./client/surface";
+import { contributeWorkspaceButtons } from "./client/workspaces";
+import { contributeDisplay } from "./client/display";
 export default function contribute(client: PluginClientContext) {
-  const surface = client.addSurface("sync", SyncSurface);
-  const sidebar = client.addSidebarItem({
-    id: "sync",
-    title: "Sync",
+  const surface = client.addSurface("transfer", TransferSurface);
+  const buttons = contributeWorkspaceButtons(client, TransferPopover);
+  const display = contributeDisplay(client);
+  const command = client.addCommandCenterItem({
+    id: "transfer-workspace",
+    title: "Transfer a workspace",
     icon: "ArrowRightLeft",
-    surface: "sync",
+    keywords: ["copy", "move", "host", "ssh", "sync"],
+    context: "global",
+    onSelect({ openSurface }) {
+      openSurface("transfer");
+    },
   });
   return () => {
-    sidebar();
+    command();
+    display();
+    buttons();
     surface();
   };
 }

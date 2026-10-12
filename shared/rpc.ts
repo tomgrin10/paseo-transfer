@@ -8,7 +8,7 @@ const endpoint = z.object({
   port: z.number().int().min(1).max(65535).optional(),
 });
 export const hostsRpc = defineRpc({
-  name: "sync.hosts",
+  name: "transfer.hosts",
   input: z.object({}),
   output: z.object({
     hosts: z.array(
@@ -21,7 +21,7 @@ export const hostsRpc = defineRpc({
   }),
 });
 export const listRpc = defineRpc({
-  name: "sync.workspaces",
+  name: "transfer.workspaces",
   input: z.object({ endpoint }),
   output: z.object({
     workspaces: z.array(
@@ -36,7 +36,7 @@ export const listRpc = defineRpc({
   }),
 });
 export const previewRpc = defineRpc({
-  name: "sync.preview",
+  name: "transfer.preview",
   input: z.object({
     source: endpoint,
     target: endpoint,
@@ -63,12 +63,12 @@ export const previewRpc = defineRpc({
   }),
 });
 export const runRpc = defineRpc({
-  name: "sync.run",
+  name: "transfer.run",
   input: z.object({ planId: z.string() }),
   output: z.object({ runId: z.string() }),
 });
 export const statusRpc = defineRpc({
-  name: "sync.status",
+  name: "transfer.status",
   input: z.object({ runId: z.string() }),
   output: z.object({
     state: z.enum(["running", "done", "failed"]),

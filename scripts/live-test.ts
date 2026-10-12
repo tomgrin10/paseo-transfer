@@ -15,7 +15,7 @@ import type { TransferResult } from "../shared/types";
 import assert from "node:assert/strict";
 
 const exec = promisify(execFile);
-const root = await fs.mkdtemp(path.join(tmpdir(), "sync-live-"));
+const root = await fs.mkdtemp(path.join(tmpdir(), "transfer-live-"));
 const repo = path.join(root, "repo"),
   sourceHome = path.join(root, "source"),
   targetHome = path.join(root, "target");
@@ -80,8 +80,14 @@ try {
       path.join(dir, "auth.json"),
     );
   await exec("git", ["init", "-b", "main", repo]);
-  await exec("git", ["-C", repo, "config", "user.name", "Sync Live"]);
-  await exec("git", ["-C", repo, "config", "user.email", "sync@example.test"]);
+  await exec("git", ["-C", repo, "config", "user.name", "Transfer Live"]);
+  await exec("git", [
+    "-C",
+    repo,
+    "config",
+    "user.email",
+    "transfer@example.test",
+  ]);
   await fs.writeFile(path.join(repo, "test.txt"), "live transfer");
   await exec("git", ["-C", repo, "add", "."]);
   await exec("git", ["-C", repo, "commit", "-m", "live fixture"]);
@@ -125,7 +131,7 @@ try {
   await cli(sourceHome, "plugin", "install", process.cwd());
   const plugins = await cli(sourceHome, "plugin", "ls");
   assert.ok(
-    plugins.some((p: any) => p.id === "sync" && p.status === "running"),
+    plugins.some((p: any) => p.id === "transfer" && p.status === "running"),
     JSON.stringify(plugins),
   );
   const sourceStatus = await cli(sourceHome, "status");
@@ -143,8 +149,12 @@ try {
   await client.connect();
   await client.fetchAgents();
   const catalog = await client.getPluginCatalog();
-  assert.ok(catalog.find((p) => p.id === "sync")?.clientBundle);
-  const hostResult = await client.invokePluginRpc("sync", "sync.hosts", {});
+  assert.ok(catalog.find((p) => p.id === "transfer")?.clientBundle);
+  const hostResult = await client.invokePluginRpc(
+    "transfer",
+    "transfer.hosts",
+    {},
+  );
   assert.ok(hostResult);
   console.log(
     "Plugin server loaded, client bundle compiled, and RPC round-trip passed.",
@@ -158,7 +168,7 @@ try {
     "--path",
     repo,
     "--title",
-    "Sync live conversations",
+    "Transfer live conversations",
   );
   console.log("Creating short real Claude and Codex conversations.");
   const claude = await exec(
@@ -189,7 +199,7 @@ try {
     "--cwd",
     repo,
     "--label",
-    "sync-test=claude",
+    "transfer-test=claude",
   );
   console.log("Claude source conversation imported.");
   const codexAgent = await client.createAgent({
@@ -197,8 +207,8 @@ try {
     model: "gpt-6.1-sol",
     cwd: repo,
     workspaceId: workspace.workspaceId,
-    title: "Sync Codex live test",
-    labels: { "sync-test": "codex" },
+    title: "Transfer Codex live test",
+    labels: { "transfer-test": "codex" },
     initialPrompt: `Remember this exact marker for later: ${marker}. Reply only READY. Do not use tools.`,
   });
   const sourceFinished = await client.waitForFinish(codexAgent.id, 180000);
@@ -235,14 +245,14 @@ try {
     knownHostsFile: fixture.known,
     home: targetHome,
   };
-  const plan = (await client.invokePluginRpc("sync", "sync.preview", {
+  const plan = (await client.invokePluginRpc("transfer", "transfer.preview", {
     source: { target: "", home: sourceHome },
     target: endpoint,
     workspaceId: workspace.workspaceId,
     destination: target,
     mode: "copy",
   })) as { id: string };
-  const run = (await client.invokePluginRpc("sync", "sync.run", {
+  const run = (await client.invokePluginRpc("transfer", "transfer.run", {
     planId: plan.id,
   })) as { runId: string };
   let progress: {
@@ -252,7 +262,7 @@ try {
   };
   do {
     await new Promise((r) => setTimeout(r, 500));
-    progress = (await client.invokePluginRpc("sync", "sync.status", {
+    progress = (await client.invokePluginRpc("transfer", "transfer.status", {
       runId: run.runId,
     })) as typeof progress;
   } while (progress.state === "running");
@@ -303,7 +313,7 @@ try {
   console.log(
     JSON.stringify({
       paseo: sourceStatus.daemonVersion,
-      plugin: "sync",
+      plugin: "transfer",
       transport: "SSH",
       providers: ["claude", "codex"],
       verified: true,

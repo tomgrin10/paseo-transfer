@@ -1,5 +1,14 @@
 # Verification
 
+## 1.1.0 — 2026-10-12
+
+- Typecheck and formatting pass. The 12 isolated-daemon Git/SSH integration tests pass; four additional tests cover paginated workspace header registration, closed workspaces, unload races, failed refreshes, and the hidden sidebar default.
+- Desktop (760×560) and compact (390×844) browser checks render the actual Transfer popup with fixture RPCs. Target changes preserve the current workspace; copy/move previews and copy completion pass; reopening retains the result. No horizontal overflow or browser runtime errors were observed. Paseo owns popup sizing and scrolling.
+- The README screenshot uses that fixture preview. Package dry run includes the generated worker, display settings, and documentation.
+- No provider/import behavior changed. The real-provider test below describes version 1.0.0; it was not rerun for this UI and naming update.
+
+## 1.0.0
+
 Verified on 2026-10-08, with Node 24.20.0, installed Paseo 0.11.0, and official SDK 0.11.1.
 
 - `npm run verify`: typecheck, formatting, and 12 passing integration tests. Tests start two independent temporary Paseo homes, use real Git repositories and worktrees, and transport snapshots through an encrypted SSH fixture.

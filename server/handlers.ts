@@ -81,7 +81,7 @@ export async function preview(input: RpcInput<typeof previewRpc>) {
   return plan;
 }
 export function start({ planId }: RpcInput<typeof runRpc>) {
-  if (disposed) throw new Error("Sync is shutting down.");
+  if (disposed) throw new Error("Transfer is shutting down.");
   if (busy)
     throw new Error("A transfer is already running. Wait for it to finish.");
   const cached = plans.get(planId);
@@ -108,7 +108,7 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
         throw new Error(
           "Source changed since preview. Preview it again before transferring.",
         );
-      if (disposed) throw new Error("Sync is shutting down.");
+      if (disposed) throw new Error("Transfer is shutting down.");
       run.message = "Copying and verifying workspace…";
       const result = await invoke<TransferResult>(cached.input.target, {
         action: "receive",
@@ -123,7 +123,7 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
       if (cached.plan.mode === "move") {
         if (disposed)
           throw new Error(
-            "Sync was reloaded; target is copied but source was kept open.",
+            "Transfer was reloaded; target is copied but source was kept open.",
           );
         run.message = "Destination verified. Archiving source…";
         await invoke(cached.input.source, {

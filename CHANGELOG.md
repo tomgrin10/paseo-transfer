@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0
+
+- Rename Sync to Transfer.
+- Open a workspace-scoped transfer popup from a labelled header button.
+- Hide the sidebar by default, with an optional host-persisted display setting and Command Center access.
+- Keep the current workspace selected when changing target hosts, and retain transfer progress when reopening its popup.
+
 ## 1.0.0
 
 - Rebuild for Paseo 0.11 with separate client/server entries and the official SDK.
