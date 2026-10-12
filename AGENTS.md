@@ -11,3 +11,11 @@ A transfer must use a new destination. Preserve staged/unstaged changes and veri
 Run `npm run verify`. For provider or import changes, run `npm run test:live` with authenticated provider CLIs; use isolated homes, clean them afterward, and never print credentials. The SSH fixture uses a temporary loopback server and pins its host key. `scripts/ui-preview.tsx` renders the actual component with fixture RPC responses.
 
 Use host theme tokens and cross-platform React Native controls. Test desktop and compact layouts. Reload only this plugin (`paseo plugin reload transfer`); restarting the main daemon kills active agents.
+
+## Automated npm releases
+
+- The public install command is `paseo plugin install paseo-transfer`. Keep it in the README and keep Other plugins as its final section.
+- Update package.json and package-lock.json together for a release. Tag the exact clean main commit as vX.Y.Z and push the tag.
+- .github/workflows/publish-npm.yml validates the tag, runs verification and package inspection, and publishes with npm Trusted Publishing through GitHub OIDC. Do not publish manually.
+- Keep npm publisher permissions scoped to tomgrin10/paseo-transfer and publish-npm.yml. No long-lived npm token is needed in GitHub.
+- Wait for the workflow and registry integrity check before creating a GitHub release or updating an installed copy. Test the bare package-name installer in an isolated Paseo home; never restart the user's daemon.
