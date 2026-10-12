@@ -1,7 +1,8 @@
 # paseo-transfer
 
+[![npm version](https://img.shields.io/npm/v/paseo-transfer?style=for-the-badge&color=cb3837)](https://www.npmjs.com/package/paseo-transfer)
+[![npm downloads](https://img.shields.io/npm/dm/paseo-transfer?style=for-the-badge&color=cb3837)](https://www.npmjs.com/package/paseo-transfer)
 [![Paseo](https://img.shields.io/badge/Paseo-%E2%89%A5%200.11.0-8A63D2?style=for-the-badge)](https://paseo.sh)
-[![CI](https://img.shields.io/github/actions/workflow/status/tomgrin10/paseo-transfer/ci.yml?branch=main&style=for-the-badge&label=tests&color=2563eb)](https://github.com/tomgrin10/paseo-transfer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/tomgrin10/paseo-transfer?style=for-the-badge&color=2563eb)](LICENSE)
 
 Copy or move a workspace to another host, with Git history, local changes, and Claude/Codex conversations.
@@ -15,7 +16,7 @@ Example using fixture workspace and host data.
 Enable plugins in **Settings → Plugins**, then run on the host you transfer from:
 
 ```sh
-paseo plugin install https://github.com/tomgrin10/paseo-transfer.git
+paseo plugin install paseo-transfer
 ```
 
 Requires Paseo **0.11.0+**, Node **22+**, Git, and Linux/macOS (or WSL) on both hosts. The receiving host needs a running Paseo daemon, SSH access, and its own provider CLIs and credentials. Only the host opening Transfer needs the plugin.
@@ -55,3 +56,14 @@ Checks use isolated Paseo daemons, temporary Git repositories, and an encrypted 
 ## License
 
 [MIT](LICENSE). Rebuilt from [itsjustanks/paseo-plugin-sync](https://github.com/itsjustanks/paseo-plugin-sync); its original attribution is preserved.
+
+## Other plugins
+
+- [Defer](https://github.com/tomgrin10/paseo-defer) — Schedule messages for later delivery.
+- [Graphite](https://github.com/tomgrin10/paseo-graphite) — Graphite stacks and PR status.
+- [Smart Session](https://github.com/tomgrin10/paseo-smart-session) — Context compaction and usage insights.
+- [Vitals](https://github.com/tomgrin10/paseo-vitals) — Host, agent, and Docker health.
+- [Session Guard](https://github.com/tomgrin10/paseo-session-guard) — Pause at session limits and continue after reset.
+- [Transcript Search](https://github.com/tomgrin10/paseo-transcript-search) — Search conversations across connected hosts.
+- [Send to Paseo](https://github.com/tomgrin10/send-to-paseo) — Send GitHub and Graphite PRs to Paseo from Chrome.
+- [Dispatch](https://github.com/tomgrin10/paseo-dispatch) — Route tasks to existing workspaces (development preview).
