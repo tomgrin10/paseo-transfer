@@ -13,32 +13,27 @@ Example using fixture workspace and host data.
 
 ## Install
 
-Enable plugins in **Settings → Plugins**, then run on the host you transfer from:
+Enable plugins in **Settings → Plugins**, then run on the initiating host:
 
 ```sh
 paseo plugin install paseo-transfer
 ```
 
-Requires Paseo **0.11.0+**, Node **22+**, Git, and Linux/macOS (or WSL) on both hosts. The receiving host needs a running Paseo daemon, SSH access, and its own provider CLIs and credentials. Only the host opening Transfer needs the plugin.
-
-Formerly **Sync**. GitHub redirects the old repository URL. Existing installations keep their `sync` ID: use `paseo plugin update sync`. New installations use `paseo plugin update transfer`. Install one copy per host.
+Both hosts need Paseo **0.11.0+**, Node **22+**, Git, and Linux/macOS or WSL. The receiving host also needs a running Paseo daemon, SSH access, and its own provider CLIs and credentials. Only the initiating host needs the plugin.
 
 ## Use
 
-1. Open a workspace and press **Transfer** at the top right. Its popup selects that workspace for you.
-2. Choose the receiving host from your SSH aliases or online Tailscale peers, or enter `user@host`. Use normal `ssh` once to trust a new host's key.
-3. Choose a **new directory** on the receiving host and **Copy** or **Move**, then press **Preview transfer**.
-4. Review the files, conversations, and destination, then press **Copy workspace** or **Move workspace**. Stop running agents before transferring.
+1. Stop running agents, open a workspace, and press **Transfer** at the top right.
+2. Choose a receiving host and a **new directory**. Use an SSH alias, online Tailscale peer, or `user@host`; trust new host keys with `ssh` first.
+3. Choose **Copy** or **Move**, press **Preview transfer**, review the details, and start.
 
-**Copy** keeps the source open. **Move** archives it through Paseo only after verification; a managed source worktree may be removed. Git-ignored files stay on the source, so Move refuses worktrees containing them.
+**Copy** keeps the source. **Move** archives it after verification; a managed source worktree may be removed. Git-ignored files stay behind, so Move refuses worktrees containing them.
 
-The popup can close while a transfer runs; reopen it to check progress. The sidebar is hidden by default. Enable it in **Settings → Plugins → Transfer → Display**, or use **⌘K / Ctrl+K → Transfer a workspace** for the full screen, including transfers into the current host.
+Close and reopen the popup to check progress. The sidebar is hidden by default; enable it in **Settings → Plugins → Transfer → Display**. **⌘K / Ctrl+K → Transfer a workspace** opens the full screen, including incoming transfers.
 
 ## Data and recovery
 
-Transfers use SSH and each host's existing Paseo authentication. Provider credentials, MCP settings, Git-ignored files, and launch settings stay on their original hosts. Each copy is an independent checkout.
-
-Transfer refuses occupied destinations, changed previews, unsupported conversations, and unsafe paths. It verifies the destination before archiving a source and preserves registered partial transfers for recovery. Plugins run trusted, unsandboxed code.
+Transfers use SSH and existing Paseo authentication. Provider credentials, MCP settings, Git-ignored files, and launch settings stay on their original hosts. Copies are independent checkouts; registered partial transfers are kept for recovery.
 
 See the [transfer details](docs/behavior.md) for supported content, limits, and failure handling.
 
@@ -47,11 +42,9 @@ See the [transfer details](docs/behavior.md) for supported content, limits, and 
 ```sh
 npm ci
 npm run verify
-npm pack --dry-run
-npx tsx scripts/ui-preview.tsx
 ```
 
-Checks use isolated Paseo daemons, temporary Git repositories, and an encrypted SSH fixture. `npm run test:live` additionally transfers and resumes real provider conversations. Reload only this plugin with `paseo plugin reload transfer` (`sync` for an existing installation).
+Reload with `paseo plugin reload transfer`. Provider checks: `npm run test:live`. UI preview: `npx tsx scripts/ui-preview.tsx`.
 
 ## License
 
