@@ -2,6 +2,8 @@
 
 Use the official split Paseo plugin SDK: `index.server.ts` registers handlers, `index.client.tsx` registers the native surface, `shared/` contains runtime-neutral contracts. Never introduce a local SDK declaration shim.
 
+Connected hosts reuse the authenticated per-installation RPC federation adapted from Transcript Search. `client/federation.ts` keys capabilities by server ID and reacquires them for each request; never fall back by name or to the current host. `server/connected.ts` validates the requested server ID, runs slow operations as polled tasks, and spools bounded checksummed chunks in private temporary directories. Keep the app open during connected transfers; closing a popup is safe. Home directories, system roots, and home ancestors must be rejected before recursive scanning.
+
 `server/worker.ts` runs both locally and over SSH. `scripts/build.mjs` generates the committed `shared/worker-source.ts`. Run `npm run prepare` after any worker change and include the generated file in the commit. This keeps Git installs independent of npm preparation.
 
 Use Paseo CLI/API operations to create workspaces, import agents, and archive sources. Agent registry files may be read for persistence handles, but must never be written. Provider credentials and MCP configuration do not transfer. Child CLI calls scrub originating agent scope, daemon password, and Codex thread IDs.

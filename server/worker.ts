@@ -98,7 +98,21 @@ async function filesBelow(
   if (!(await exists(root))) return [];
   const result: string[] = [];
   async function walk(dir: string) {
-    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (
+        ["EPERM", "EACCES"].includes(
+          (error as NodeJS.ErrnoException).code ?? "",
+        )
+      )
+        throw new Error(
+          `Cannot read ${dir}. Select a project workspace you can access; no files were skipped. On macOS, check the app's Files and Folders permissions.`,
+        );
+      throw error;
+    }
+    for (const entry of entries) {
       if (!filter(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
@@ -257,8 +271,9 @@ export async function snapshot(
     throw new Error(
       "Workspace is missing or archived. Refresh the workspace list.",
     );
-  const native = await nativeSessions(home, workspace);
   const cwd = workspace.cwd;
+  await assertWorkspaceDirectory(cwd);
+  const native = await nativeSessions(home, workspace);
   if ((await fs.lstat(cwd)).isSymbolicLink())
     throw new Error("Workspace root must not be a symlink.");
   let gitRoot: string | null = null;
@@ -386,6 +401,18 @@ export async function snapshot(
     hasIgnored,
   };
   return { ...base, fingerprint: fingerprint(base), bytes };
+}
+export async function assertWorkspaceDirectory(cwd: string) {
+  const resolved = await fs.realpath(cwd);
+  const userHome = await fs.realpath(homedir());
+  if (
+    resolved === path.parse(resolved).root ||
+    resolved === userHome ||
+    inside(resolved, userHome)
+  )
+    throw new Error(
+      "This workspace points to your home or a system directory. Open the specific project folder as a Paseo workspace and transfer that instead.",
+    );
 }
 export function resolveDestination(destination: string) {
   const expanded =

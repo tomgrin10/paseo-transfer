@@ -8,10 +8,9 @@ import {
   DaemonClient,
   type WaitForFinishResult,
 } from "@getpaseo/client/internal/daemon-client";
-import { sshFixture } from "./ssh-fixture";
 import { snapshot } from "../server/worker";
-import { invoke } from "../server/transport";
-import type { TransferResult } from "../shared/types";
+import { createTransferClient } from "../client/connected-transfer";
+import type { HostRpc } from "../client/federation";
 import assert from "node:assert/strict";
 
 const exec = promisify(execFile);
@@ -24,7 +23,6 @@ const sourceClaude = path.join(root, "source-claude"),
 const sourceCodex = path.join(root, "source-codex"),
   targetCodex = path.join(root, "target-codex");
 const daemons: ReturnType<typeof spawn>[] = [];
-let fixture: Awaited<ReturnType<typeof sshFixture>> | undefined;
 let client: DaemonClient | undefined;
 let targetClient: DaemonClient | undefined;
 async function cli(home: string, ...args: string[]) {
@@ -129,6 +127,7 @@ try {
   }
   console.log("Two isolated Paseo 0.11 daemons ready.");
   await cli(sourceHome, "plugin", "install", process.cwd());
+  await cli(targetHome, "plugin", "install", process.cwd());
   const plugins = await cli(sourceHome, "plugin", "ls");
   assert.ok(
     plugins.some((p: any) => p.id === "transfer" && p.status === "running"),
@@ -236,41 +235,7 @@ try {
     else process.env.CODEX_HOME = previousCodex;
   }
   assert.equal(snap.sessions.length, 2);
-  fixture = await sshFixture(root, targetEnv);
   const target = path.join(root, "received");
-  const endpoint = {
-    target: "127.0.0.1",
-    port: fixture.port,
-    identityFile: fixture.key,
-    knownHostsFile: fixture.known,
-    home: targetHome,
-  };
-  const plan = (await client.invokePluginRpc("transfer", "transfer.preview", {
-    source: { target: "", home: sourceHome },
-    target: endpoint,
-    workspaceId: workspace.workspaceId,
-    destination: target,
-    mode: "copy",
-  })) as { id: string };
-  const run = (await client.invokePluginRpc("transfer", "transfer.run", {
-    planId: plan.id,
-  })) as { runId: string };
-  let progress: {
-    state: string;
-    message: string;
-    result: TransferResult | null;
-  };
-  do {
-    await new Promise((r) => setTimeout(r, 500));
-    progress = (await client.invokePluginRpc("transfer", "transfer.status", {
-      runId: run.runId,
-    })) as typeof progress;
-  } while (progress.state === "running");
-  assert.equal(progress.state, "done", progress.message);
-  const result = progress.result!;
-  assert.equal(result.verified, true);
-  assert.equal(result.agents.length, 2);
-  console.log("Both conversations imported into target over encrypted SSH.");
   const targetStatus = await cli(targetHome, "status");
   const targetCredential = (
     await fs.readFile(path.join(targetHome, "local-credential"), "utf8")
@@ -285,6 +250,37 @@ try {
   });
   await targetClient.connect();
   await targetClient.fetchAgents();
+  const sourceId = (
+    await fs.readFile(path.join(sourceHome, "server-id"), "utf8")
+  ).trim();
+  const targetId = (
+    await fs.readFile(path.join(targetHome, "server-id"), "utf8")
+  ).trim();
+  const connected = createTransferClient((id) => {
+    const daemon =
+      id === sourceId ? client! : id === targetId ? targetClient! : undefined;
+    if (!daemon) throw new Error("Unexpected host");
+    return (async (contract, input) =>
+      contract.output.parse(
+        await daemon.invokePluginRpc("transfer", contract.name, input),
+      )) as HostRpc;
+  });
+  const plan = await connected.preview({
+    sourceId,
+    targetId,
+    workspaceId: workspace.workspaceId,
+    destination: target,
+    mode: "copy",
+  });
+  const { runId } = connected.start(plan);
+  while (connected.status(runId).state === "running")
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  const progress = connected.status(runId);
+  assert.equal(progress.state, "done", progress.message);
+  const result = progress.result!;
+  assert.equal(result.verified, true);
+  assert.equal(result.agents.length, 2);
+  console.log("Both conversations imported through connected Paseo plugins.");
   for (let i = 0; i < result.agents.length; i++) {
     await targetClient.sendMessage(
       result.agents[i],
@@ -314,7 +310,7 @@ try {
     JSON.stringify({
       paseo: sourceStatus.daemonVersion,
       plugin: "transfer",
-      transport: "SSH",
+      transport: "Paseo plugin RPC",
       providers: ["claude", "codex"],
       verified: true,
     }),
@@ -322,7 +318,6 @@ try {
 } finally {
   await client?.close().catch(() => {});
   await targetClient?.close().catch(() => {});
-  await fixture?.close();
   for (const d of daemons) {
     d.kill("SIGTERM");
     await new Promise<void>((r) => {

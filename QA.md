@@ -1,5 +1,14 @@
 # Verification
 
+## 1.2.0 — 2026-10-16
+
+- Node 24.20.0, Paseo 0.11.2, official SDK 0.11.1. Verification covers 22 tests: the existing Git/SSH and workspace-button checks, real authenticated plugin RPC transfers between two isolated daemon homes, and host capability lifecycle checks.
+- Connected transport checks cover multiple chunks, reverse transfers, verified move/archive, stale previews, disconnected targets, explicit server identity, chunk ordering/size, corrupt uploads, and source preservation. The home/system directory guard rejects the home directory, filesystem root, and a symlink to home before recursion.
+- `npm run test:live` passed through the new connected-plugin transport. Real Claude and Codex sessions imported on the receiving daemon, resumed through its supported API, and recalled a source-only marker. Credentials were confined to temporary isolated provider homes and removed afterward.
+- Actual React Native components completed copy previews, copy completion, popup close/reopen, and incoming transfer previews in Chromium fixtures. Desktop (1280×844) and compact (390×844), light and dark, showed no horizontal overflow or browser runtime errors. Compact inputs compute to 16px. Offline hosts remain labelled and disabled. The Impeccable detector returned no findings.
+- The README screenshot uses fixture data. Package inspection includes the generated SSH worker and connected transport, with no runtime dependencies or credentials. A secret-pattern scan found no matches.
+- These checks use independent daemons on one Linux host. Physical laptop-to-VM networking, macOS permission prompts and native iOS/Android interactions remain untested; the reported Trash error is addressed by guarding overly broad source directories and explaining filesystem permission errors.
+
 ## 1.1.0 — 2026-10-12
 
 - Typecheck and formatting pass. The 12 isolated-daemon Git/SSH integration tests pass; four additional tests cover paginated workspace header registration, closed workspaces, unload races, failed refreshes, and the hidden sidebar default.

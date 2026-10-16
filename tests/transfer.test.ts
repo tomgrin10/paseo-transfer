@@ -5,12 +5,26 @@ import { promises as fs } from "node:fs";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
+import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { createTransferClient } from "../client/connected-transfer";
+import type { HostRpc } from "../client/federation";
+import {
+  taskStart,
+  taskStatus,
+  uploadStart,
+  uploadChunk,
+  readChunk,
+  releaseData,
+  hostIdentity,
+  CHUNK_BYTES,
+} from "../shared/connected";
 import {
   dispatch,
   snapshot,
   receive,
   claudeProjectDir,
+  assertWorkspaceDirectory,
 } from "../server/worker";
 import { invoke, sshArgs, shellQuote } from "../server/transport";
 import { sshHosts, tailscaleHosts } from "../server/discovery";
@@ -19,6 +33,27 @@ import { preview, start, status } from "../server/handlers";
 const exec = promisify(execFile);
 let root: string, sourceHome: string, targetHome: string, repo: string;
 const daemons: ReturnType<typeof spawn>[] = [];
+const clients = new Map<string, DaemonClient>();
+const ids = new Map<string, string>();
+const getRpc =
+  (id: string): HostRpc =>
+  async (contract, input) => {
+    const client = clients.get(id);
+    if (!client) throw new Error("Host disconnected");
+    return contract.output.parse(
+      await client.invokePluginRpc("transfer", contract.name, input),
+    );
+  };
+const connected = createTransferClient(
+  getRpc,
+  () => new Promise((resolve) => setTimeout(resolve, 20)),
+);
+async function waitConnected(runId: string) {
+  const deadline = Date.now() + 120_000;
+  while (connected.status(runId).state === "running" && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  return connected.status(runId);
+}
 async function cli(home: string, ...args: string[]) {
   return JSON.parse(
     (
@@ -41,6 +76,7 @@ before(async () => {
     await fs.writeFile(
       path.join(home, "config.json"),
       JSON.stringify({
+        pluginsEnabled: true,
         daemon: {
           listen: "127.0.0.1:0",
           relay: { enabled: false },
@@ -68,6 +104,25 @@ before(async () => {
       }
     }
     assert.ok(ready, "test daemon ready");
+    await cli(home, "plugin", "install", process.cwd());
+    const { listen } = await cli(home, "status");
+    const client = new DaemonClient({
+      url: `ws://${listen}/ws`,
+      localCredential: () => credential,
+      clientId: `transfer-test-${daemons.length}`,
+      clientType: "cli",
+      appVersion: "0.11.1",
+      reconnect: { enabled: false },
+    });
+    const credential = (
+      await fs.readFile(path.join(home, "local-credential"), "utf8")
+    ).trim();
+    await client.connect();
+    const identity = hostIdentity.output.parse(
+      await client.invokePluginRpc("transfer", hostIdentity.name, {}),
+    );
+    clients.set(identity.serverId, client);
+    ids.set(home, identity.serverId);
   }
   await fs.mkdir(repo);
   await git(repo, "init", "-b", "main");
@@ -91,6 +146,7 @@ before(async () => {
   await fs.symlink("tracked.txt", path.join(repo, "link"));
 });
 after(async () => {
+  for (const client of clients.values()) await client.close();
   for (const d of daemons) {
     d.kill("SIGTERM");
     await new Promise<void>((r) => {
@@ -105,6 +161,167 @@ after(async () => {
     });
   }
   if (root) await fs.rm(root, { recursive: true, force: true });
+});
+
+test("home and system workspaces are rejected before protected folders can be scanned", async () => {
+  await assert.rejects(
+    assertWorkspaceDirectory(homedir()),
+    /specific project folder/,
+  );
+  await assert.rejects(
+    assertWorkspaceDirectory("/"),
+    /specific project folder/,
+  );
+  const alias = path.join(root, "home-alias");
+  await fs.symlink(homedir(), alias);
+  await assert.rejects(
+    assertWorkspaceDirectory(alias),
+    /specific project folder/,
+  );
+  await assertWorkspaceDirectory(repo);
+});
+
+test("connected plugins copy and pull multiple chunks through real authenticated Paseo RPC", async () => {
+  const dir = path.join(root, "connected-source");
+  await fs.mkdir(dir);
+  const data = Buffer.alloc(CHUNK_BYTES * 2 + 17, "x");
+  await fs.writeFile(path.join(dir, "note"), data);
+  const workspace = await cli(
+    sourceHome,
+    "workspace",
+    "create",
+    "--isolation",
+    "local",
+    "--path",
+    dir,
+  );
+  const sourceId = ids.get(sourceHome)!,
+    targetId = ids.get(targetHome)!;
+  const target = path.join(root, "connected-copy");
+  const plan = await connected.preview({
+    sourceId,
+    targetId,
+    workspaceId: workspace.workspaceId,
+    destination: target,
+    mode: "copy",
+  });
+  assert.ok(plan.connected.manifest.chunks >= 3);
+  const result = await waitConnected(connected.start(plan).runId);
+  assert.equal(result.state, "done", result.message);
+  assert.equal(result.result?.verified, true);
+  assert.deepEqual(await fs.readFile(path.join(target, "note")), data);
+  const reverse = await connected.preview({
+    sourceId: targetId,
+    targetId: sourceId,
+    workspaceId: result.result!.workspaceId,
+    destination: path.join(root, "connected-pull"),
+    mode: "move",
+  });
+  const moved = await waitConnected(connected.start(reverse).runId);
+  assert.equal(moved.state, "done", moved.message);
+  assert.equal(moved.result?.sourceArchived, true);
+  assert.ok(
+    !(await cli(targetHome, "workspace", "ls")).some(
+      (w: any) => w.workspaceId === result.result!.workspaceId,
+    ),
+  );
+});
+
+test("connected previews preserve the source on edits and disconnected targets", async () => {
+  const dir = path.join(root, "connected-stale");
+  await fs.mkdir(dir);
+  await fs.writeFile(path.join(dir, "note"), "original");
+  const workspace = await cli(
+    sourceHome,
+    "workspace",
+    "create",
+    "--isolation",
+    "local",
+    "--path",
+    dir,
+  );
+  const sourceId = ids.get(sourceHome)!,
+    targetId = ids.get(targetHome)!;
+  const destination = path.join(root, "connected-stale-target");
+  const plan = await connected.preview({
+    sourceId,
+    targetId,
+    workspaceId: workspace.workspaceId,
+    destination,
+    mode: "move",
+  });
+  await fs.writeFile(path.join(dir, "note"), "changed");
+  const stale = await waitConnected(connected.start(plan).runId);
+  assert.equal(stale.state, "failed");
+  assert.match(stale.message, /changed since preview/);
+  await assert.rejects(fs.access(destination));
+  const next = await connected.preview({
+    sourceId,
+    targetId,
+    workspaceId: workspace.workspaceId,
+    destination,
+    mode: "move",
+  });
+  const targetClient = clients.get(targetId)!;
+  clients.delete(targetId);
+  try {
+    const offline = await waitConnected(connected.start(next).runId);
+    assert.equal(offline.state, "failed");
+    assert.match(offline.message, /disconnected/);
+    assert.ok(
+      (await cli(sourceHome, "workspace", "ls")).some(
+        (w: any) => w.workspaceId === workspace.workspaceId,
+      ),
+    );
+  } finally {
+    clients.set(targetId, targetClient);
+  }
+});
+
+test("connected RPC refuses wrong hosts, out-of-order chunks and corrupted uploads", async () => {
+  const serverId = ids.get(targetHome)!,
+    rpc = getRpc(serverId);
+  await assert.rejects(
+    rpc(taskStart, {
+      serverId: ids.get(sourceHome)!,
+      task: { action: "export", workspaceId: "missing", mode: "copy" },
+    }),
+    /host changed/,
+  );
+  const upload = await rpc(uploadStart, {
+    serverId,
+    wireBytes: 2,
+    checksum: "a".repeat(64),
+  });
+  await assert.rejects(
+    rpc(uploadChunk, { serverId, id: upload.id, index: 1, data: "e30=" }),
+    /out of order/,
+  );
+  await assert.rejects(
+    rpc(uploadChunk, { serverId, id: upload.id, index: 0, data: "eA==" }),
+    /invalid size/,
+  );
+  await rpc(uploadChunk, { serverId, id: upload.id, index: 0, data: "e30=" });
+  const receive = await rpc(taskStart, {
+    serverId,
+    task: {
+      action: "receive",
+      uploadId: upload.id,
+      destination: path.join(root, "corrupt-upload"),
+    },
+  });
+  let status;
+  do {
+    status = await rpc(taskStatus, { serverId, id: receive.id });
+  } while (status.state === "running");
+  assert.equal(status.state, "failed");
+  assert.match(status.message, /checksum mismatch/);
+  await assert.rejects(fs.access(path.join(root, "corrupt-upload")));
+  await rpc(releaseData, { serverId, id: receive.id });
+  await assert.rejects(
+    rpc(readChunk, { serverId, id: upload.id, index: 0 }),
+    /expired/,
+  );
 });
 
 test("discovery respects SSH patterns and online Tailscale peers", () => {

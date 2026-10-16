@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Transfer directly between connected Paseo hosts with the plugin on both, reusing Transcript Search's host federation and Send to Paseo's explicit server targeting.
+- List hosts by name, select a sole available destination, explain disconnected or missing installations, and keep SSH as an alternative.
+- Relay bounded chunks, verify their checksum, recheck preview freshness, and archive moved sources only after destination verification.
+- Refuse home and system directory workspaces before scanning protected folders such as macOS Trash; explain permission failures without skipping files.
+- Open the verified workspace on its destination host and retain connected transfer progress when the popup is closed.
+
 ## 1.1.0
 
 - Rename Sync to Transfer.

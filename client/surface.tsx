@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   useRpc,
+  useHosts,
   type PluginSurfaceProps,
   type PluginButtonContentProps,
 } from "@getpaseo/plugin/client";
@@ -14,6 +15,8 @@ import {
   statusRpc,
 } from "../shared/rpc";
 import type { Plan } from "../shared/types";
+import { federation, hostAvailability, rpcForHost } from "./federation";
+import { connectedTransfer, type ConnectedPlan } from "./connected-transfer";
 
 const popupRuns = new Map<string, string>();
 
@@ -45,9 +48,33 @@ export function TransferSurface({
     run = useRpc(runRpc),
     status = useRpc(statusRpc);
   const [remote, setRemote] = useState("");
+  const inventory = useHosts();
+  const hostRevision = useSyncExternalStore(
+    federation.subscribe,
+    federation.snapshot,
+    federation.snapshot,
+  );
+  const connectedHosts = hostAvailability(inventory).filter(
+    (item) => item.serverId !== host.id,
+  );
+  const [transport, setTransport] = useState<"connected" | "ssh">("connected");
+  const [remoteId, setRemoteId] = useState("");
+  const selectedHost = connectedHosts.find(
+    (item) => item.serverId === remoteId,
+  );
+  const remoteReady =
+    transport === "connected"
+      ? Boolean(selectedHost?.ready)
+      : Boolean(remote.trim());
+  const remoteLabel =
+    transport === "connected"
+      ? (selectedHost?.label ?? "another host")
+      : remote.trim();
   const [home, setHome] = useState("");
   const [identityFile, setIdentityFile] = useState("");
   const [direction, setDirection] = useState<"push" | "pull">("push");
+  const sourceId = direction === "push" ? host.id : remoteId;
+  const targetId = direction === "push" ? remoteId : host.id;
   const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId);
   const [destination, setDestination] = useState("");
   const [mode, setMode] = useState<"copy" | "move">("copy");
@@ -67,15 +94,36 @@ export function TransferSurface({
     queryKey: ["transfer", host.id, "hosts"],
     queryFn: () => hosts({}),
     staleTime: 60_000,
+    enabled: transport === "ssh",
   });
   const workspaces = useQuery({
-    queryKey: ["transfer", host.id, "workspaces", source],
-    queryFn: () => list({ endpoint: source }),
-    enabled: direction === "push" || !!remote.trim(),
+    queryKey: [
+      "transfer",
+      host.id,
+      "workspaces",
+      transport,
+      sourceId,
+      selectedHost?.generation,
+      source,
+    ],
+    queryFn: () =>
+      transport === "connected" && direction === "pull"
+        ? rpcForHost(sourceId)(listRpc, { endpoint: { target: "" } })
+        : list({ endpoint: source }),
+    enabled: direction === "push" || remoteReady,
+    retry: 1,
   });
   const makePreview = useMutation({
     mutationFn: () =>
-      preview({ source, target, workspaceId, destination, mode }),
+      transport === "connected"
+        ? connectedTransfer.preview({
+            sourceId,
+            targetId,
+            workspaceId,
+            destination,
+            mode,
+          })
+        : preview({ source, target, workspaceId, destination, mode }),
     onSuccess: (data) => {
       setPlan(data);
       setRunId("");
@@ -83,7 +131,10 @@ export function TransferSurface({
     },
   });
   const transfer = useMutation({
-    mutationFn: () => run({ planId: plan!.id }),
+    mutationFn: async () =>
+      "connected" in plan!
+        ? connectedTransfer.start(plan as ConnectedPlan)
+        : run({ planId: plan!.id }),
     onSuccess: (data) => {
       setRunId(data.runId);
       if (popupKey) popupRuns.set(popupKey, data.runId);
@@ -92,7 +143,10 @@ export function TransferSurface({
   });
   const progress = useQuery({
     queryKey: ["transfer", host.id, "run", runId],
-    queryFn: () => status({ runId }),
+    queryFn: async () =>
+      runId.startsWith("connected-")
+        ? { ...connectedTransfer.status(runId) }
+        : status({ runId }),
     enabled: !!runId,
     refetchInterval: (q) => (q.state.data?.state === "running" ? 1000 : false),
   });
@@ -105,12 +159,41 @@ export function TransferSurface({
     setPlan(null);
     makePreview.reset();
     transfer.reset();
-  }, [remote, home, identityFile, direction, workspaceId, destination, mode]);
+  }, [
+    remote,
+    remoteId,
+    transport,
+    home,
+    identityFile,
+    direction,
+    workspaceId,
+    destination,
+    mode,
+  ]);
   useEffect(() => {
-    setWorkspaceId(initialWorkspaceId);
+    if (plan && "connected" in plan)
+      return () => {
+        void connectedTransfer.discard(plan as ConnectedPlan);
+      };
+  }, [plan]);
+  useEffect(() => {
+    if (!remoteId && connectedHosts.filter((item) => item.ready).length === 1)
+      setRemoteId(connectedHosts.find((item) => item.ready)!.serverId);
+  }, [remoteId, inventory, hostRevision]);
+  useEffect(() => {
+    setWorkspaceId(direction === "push" ? initialWorkspaceId : "");
     setPlan(null);
     if (!workspaceScoped) setRunId("");
-  }, [host.id, direction, remote, home, initialWorkspaceId, workspaceScoped]);
+  }, [
+    host.id,
+    direction,
+    direction === "pull" ? remote : "",
+    direction === "pull" ? remoteId : "",
+    home,
+    initialWorkspaceId,
+    workspaceScoped,
+    transport,
+  ]);
   const selectedWorkspace = workspaces.data?.workspaces.find(
     (item) => item.workspaceId === workspaceId,
   );
@@ -126,12 +209,12 @@ export function TransferSurface({
     transfer.error ??
     progress.error ??
     workspaces.error ??
-    suggestions.error;
+    (transport === "ssh" ? suggestions.error : null);
   const label = (text: string) => (
     <Text
       style={{
         color: colors.foreground,
-        fontSize: 14,
+        fontSize: layout.compact ? 16 : 14,
         fontWeight: "600",
         marginBottom: 8,
       }}
@@ -162,7 +245,7 @@ export function TransferSurface({
         borderRadius: 6,
         paddingHorizontal: 12,
         paddingVertical: 11,
-        fontSize: 14,
+        fontSize: layout.compact ? 16 : 14,
         minHeight: 44,
       }}
     />
@@ -226,7 +309,7 @@ export function TransferSurface({
                   lineHeight: 21,
                 }}
               >
-                From {host.label} to {remote.trim()}
+                From {host.label} to {remoteLabel}
               </Text>
               <View style={{ gap: 8 }}>
                 <Text
@@ -328,11 +411,23 @@ export function TransferSurface({
                     lineHeight: 20,
                   }}
                 >
-                  You can close this popup. The transfer continues on{" "}
-                  {host.label}; reopen Transfer to check progress.
+                  {runId.startsWith("connected-")
+                    ? "You can close this popup. Keep Paseo open and both hosts connected until the transfer finishes."
+                    : `You can close this popup. The transfer continues on ${host.label}; reopen Transfer to check progress.`}
                 </Text>
               ) : (
                 <View style={{ alignSelf: "flex-start" }}>
+                  {progress.data?.state === "done" &&
+                    progress.data.result &&
+                    navigation &&
+                    button("Open workspace", () =>
+                      navigation.openWorkspace({
+                        workspaceId: progress.data!.result!.workspaceId,
+                        serverId: runId.startsWith("connected-")
+                          ? connectedTransfer.status(runId).targetId
+                          : host.id,
+                      }),
+                    )}
                   {progress.error
                     ? button("Retry status", () => void progress.refetch())
                     : button("Start another transfer", () => {
@@ -427,73 +522,168 @@ export function TransferSurface({
       )}
       <View style={{ gap: 10 }}>
         {label(direction === "push" ? "Target host" : "Source host")}
-        {input(remote, setRemote, "SSH alias or user@host", "SSH host")}
-        {!!suggestions.data?.hosts.length && (
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {suggestions.data.hosts.map((item) => (
-              <View key={item.target}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {button(
+            "Paseo hosts",
+            () => setTransport("connected"),
+            locked,
+            transport === "connected",
+          )}
+          {button(
+            "Use SSH",
+            () => setTransport("ssh"),
+            locked,
+            transport === "ssh",
+          )}
+        </View>
+        {transport === "connected" ? (
+          <>
+            {connectedHosts.length ? (
+              connectedHosts.map((item) => (
+                <Pressable
+                  key={item.serverId}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${item.label}: ${item.ready ? "Connected" : item.status !== "online" ? "Offline — connect in Paseo" : "Install or update paseo-transfer"}`}
+                  accessibilityState={{
+                    selected: remoteId === item.serverId,
+                    disabled: locked || !item.ready,
+                  }}
+                  disabled={locked || !item.ready}
+                  onPress={() => setRemoteId(item.serverId)}
+                  style={({ pressed }) => ({
+                    minHeight: 52,
+                    padding: 12,
+                    gap: 4,
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    borderColor:
+                      remoteId === item.serverId
+                        ? colors.accent
+                        : colors.border,
+                    backgroundColor: pressed
+                      ? colors.surface2
+                      : colors.surface1,
+                  })}
+                >
+                  <Text
+                    style={{
+                      color: colors.foreground,
+                      fontSize: 14,
+                      fontWeight: "600",
+                    }}
+                  >
+                    {item.label}
+                    {remoteId === item.serverId ? " · Selected" : ""}
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.foregroundMuted,
+                      fontSize: 13,
+                      lineHeight: 19,
+                    }}
+                  >
+                    {item.ready
+                      ? "Connected through Paseo"
+                      : item.status !== "online"
+                        ? "Connect this host in Paseo to transfer."
+                        : "Install or update paseo-transfer on this host."}
+                  </Text>
+                </Pressable>
+              ))
+            ) : (
+              <Text
+                style={{
+                  color: colors.foregroundMuted,
+                  fontSize: 14,
+                  lineHeight: 21,
+                }}
+              >
+                Add your other host in Paseo, then install paseo-transfer there.
+                It will appear here automatically.
+              </Text>
+            )}
+            <Text
+              style={{
+                color: colors.foregroundMuted,
+                fontSize: 13,
+                lineHeight: 19,
+              }}
+            >
+              Uses your existing Paseo connections. Keep the app open and both
+              hosts connected while transferring.
+            </Text>
+          </>
+        ) : (
+          <>
+            {input(remote, setRemote, "SSH alias or user@host", "SSH host")}
+            {!!suggestions.data?.hosts.length && (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {suggestions.data.hosts.map((item) => (
+                  <View key={item.target}>
+                    {button(
+                      item.label,
+                      () => setRemote(item.target),
+                      locked,
+                      remote === item.target,
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+            <Text
+              style={{
+                color: colors.foregroundMuted,
+                fontSize: 12,
+                lineHeight: 18,
+              }}
+            >
+              Uses your SSH config and keys. Suggestions come from SSH config
+              and online Tailscale peers.
+            </Text>
+            {workspaceScoped && (
+              <View style={{ alignSelf: "flex-start" }}>
                 {button(
-                  item.label,
-                  () => setRemote(item.target),
+                  advanced ? "Hide connection options" : "Connection options",
+                  () => setAdvanced(!advanced),
                   locked,
-                  remote === item.target,
                 )}
               </View>
-            ))}
-          </View>
-        )}
-        <Text
-          style={{
-            color: colors.foregroundMuted,
-            fontSize: 12,
-            lineHeight: 18,
-          }}
-        >
-          Uses your SSH config and keys. Suggestions come from SSH config and
-          online Tailscale peers.
-        </Text>
-        {workspaceScoped && (
-          <View style={{ alignSelf: "flex-start" }}>
-            {button(
-              advanced ? "Hide connection options" : "Connection options",
-              () => setAdvanced(!advanced),
-              locked,
             )}
-          </View>
-        )}
-        {(!workspaceScoped || advanced) && (
-          <View
-            style={{
-              flexDirection:
-                workspaceScoped || layout.compact ? "column" : "row",
-              gap: 12,
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              {label("Paseo home (optional)")}
-              {input(
-                home,
-                setHome,
-                "Default on the other host",
-                "Remote Paseo home",
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              {label("SSH key (optional)")}
-              {input(
-                identityFile,
-                setIdentityFile,
-                "Use SSH config",
-                "SSH identity file",
-              )}
-            </View>
-          </View>
+            {(!workspaceScoped || advanced) && (
+              <View
+                style={{
+                  flexDirection:
+                    workspaceScoped || layout.compact ? "column" : "row",
+                  gap: 12,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  {label("Paseo home (optional)")}
+                  {input(
+                    home,
+                    setHome,
+                    "Default on the other host",
+                    "Remote Paseo home",
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  {label("SSH key (optional)")}
+                  {input(
+                    identityFile,
+                    setIdentityFile,
+                    "Use SSH config",
+                    "SSH identity file",
+                  )}
+                </View>
+              </View>
+            )}
+          </>
         )}
       </View>
       {!workspaceScoped && (
         <View style={{ gap: 8 }}>
           {label("Workspace")}
-          {direction === "pull" && !remote.trim() ? (
+          {direction === "pull" && !remoteReady ? (
             <Text style={{ color: colors.foregroundMuted }}>
               Choose a source host to load its workspaces.
             </Text>
@@ -572,7 +762,7 @@ export function TransferSurface({
               () => {
                 void workspaces.refetch();
               },
-              locked || (direction === "pull" && !remote.trim()),
+              locked || (direction === "pull" && !remoteReady),
             )}
           </View>
         </View>
@@ -627,7 +817,7 @@ export function TransferSurface({
           makePreview.isPending ? "Preparing preview…" : "Preview transfer",
           () => makePreview.mutate(),
           locked ||
-            !remote.trim() ||
+            !remoteReady ||
             !workspaceId ||
             !destination.trim() ||
             (workspaceScoped && !selectedWorkspace),
@@ -713,13 +903,16 @@ export function TransferSurface({
             </Text>
           )}
           {progress.data?.state === "done" &&
-            direction === "pull" &&
+            (direction === "pull" || runId.startsWith("connected-")) &&
             navigation &&
             progress.data.result && (
               <View style={{ alignSelf: "flex-start" }}>
                 {button("Open workspace", () =>
                   navigation.openWorkspace({
                     workspaceId: progress.data!.result!.workspaceId,
+                    serverId: runId.startsWith("connected-")
+                      ? connectedTransfer.status(runId).targetId
+                      : host.id,
                   }),
                 )}
               </View>
