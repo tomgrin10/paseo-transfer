@@ -580,7 +580,10 @@ test("encrypted SSH transports push and pull between separate daemon homes", asy
   };
   try {
     const info = await invoke<{ version: string }>(remote, { action: "info" });
-    assert.match(info.version, /^0\.11\./);
+    assert.equal(
+      info.version,
+      (await exec("paseo", ["--version"])).stdout.trim(),
+    );
     const sshSource = path.join(root, "ssh-source");
     await fs.mkdir(sshSource);
     await fs.writeFile(path.join(sshSource, "note"), "hello");

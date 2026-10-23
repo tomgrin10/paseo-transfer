@@ -31,7 +31,7 @@
     "prepare": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "verify": "npm run prepare && npm run typecheck && npm run format:check && npm test",
+    "verify": "npm run prepare && npm run typecheck && npm run format:check && npm test && node --test button-visibility.test.mjs",
     "test:live": "tsx scripts/live-test.ts",
     "format:check": "prettier --check index.client.tsx index.server.ts client server shared/types.ts shared/connected.ts shared/rpc.ts shared/display.ts tests scripts README.md CHANGELOG.md PRODUCT.md DESIGN.md package.json paseo-plugin.json tsconfig.json"
   },

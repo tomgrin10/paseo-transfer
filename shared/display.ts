@@ -5,7 +5,10 @@ export const displayPreferences = defineSettings({
   id: "display",
   scope: "host",
   version: 1,
-  schema: z.object({ showSidebar: z.boolean().default(false) }),
+  schema: z.object({
+    enable_header_button: z.boolean().default(true),
+    showSidebar: z.boolean().default(false),
+  }),
 });
 
 export const displayRpc = settingsRpc(displayPreferences.id);

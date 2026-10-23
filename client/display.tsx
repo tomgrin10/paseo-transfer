@@ -1,117 +1,185 @@
-import { useEffect } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
-import {
-  useSettings,
-  type PluginClientContext,
-  type PluginSurfaceProps,
+import type {
+  PluginClientContext,
+  PluginSidebarContribution,
+  PluginSurfaceProps,
 } from "@getpaseo/plugin/client";
+import { useSettings } from "@getpaseo/plugin/client";
 import {
   SettingsAction,
   SettingsCard,
   SettingsSection,
   SettingsSwitch,
 } from "@getpaseo/plugin/client/ui";
+import { useEffect } from "react";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { displayPreferences, displayRpc } from "../shared/display";
+import { withNavigation } from "./navigation";
+import { sidebarVisibility } from "./sidebar-visibility";
 
-const listeners = new Set<(show: boolean) => void>();
+type Display = import("zod").infer<typeof displayPreferences.schema>;
+const listeners = new Set<(values: Display) => void>();
+export function subscribeDisplay(listener: (values: Display) => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
 
 function DisplaySettings({ theme }: PluginSurfaceProps) {
   const settings = useSettings(displayPreferences);
-  const visible =
-    settings.status === "ready" ? settings.values.showSidebar : undefined;
+  const values = settings.status === "ready" ? settings.values : undefined;
   useEffect(() => {
-    if (visible !== undefined)
-      for (const listener of listeners) listener(visible);
-  }, [visible]);
+    if (values !== undefined)
+      for (const listener of listeners) listener(values);
+  }, [values]);
+
   if (settings.status === "loading")
-    return <ActivityIndicator accessibilityLabel="Loading Transfer settings" />;
+    return (
+      <ActivityIndicator
+        accessibilityLabel="Loading display settings"
+        color={theme.colors.foregroundMuted}
+      />
+    );
   if (settings.status !== "ready")
     return (
-      <SettingsCard>
-        <SettingsAction
-          label={settings.error}
-          actionLabel="Retry"
-          onPress={() => void settings.reload()}
-        />
-        {settings.status === "invalid" && (
+      <View style={{ gap: 12 }}>
+        <Text style={{ color: theme.colors.statusDanger }}>
+          {settings.error}
+        </Text>
+        <SettingsCard>
           <SettingsAction
-            label="Restore default display settings"
-            actionLabel="Reset"
-            disabled={settings.saving}
-            onPress={() => void settings.reset()}
+            label="Try loading the saved settings again"
+            actionLabel="Retry"
+            onPress={() => void settings.reload()}
           />
+          {settings.status === "invalid" && (
+            <SettingsAction
+              label="Replace invalid display settings with defaults"
+              actionLabel="Reset"
+              disabled={settings.saving}
+              onPress={() => void settings.reset()}
+            />
+          )}
+        </SettingsCard>
+        {settings.saveError && (
+          <Text style={{ color: theme.colors.statusDanger }}>
+            {settings.saveError}
+          </Text>
         )}
-      </SettingsCard>
+      </View>
     );
+
   return (
-    <View style={{ padding: 16, gap: 16 }}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 16, gap: 16 }}
+    >
       <SettingsSection title="Navigation">
         <SettingsCard>
           <SettingsSwitch
             label="Show in sidebar"
-            hint="Transfer is always available from the button at the top right of a workspace. The sidebar is hidden by default."
+            hint="Open this plugin from Command-K (Ctrl-K on Windows and Linux) while viewing a workspace or plugin on this host."
             value={settings.values.showSidebar}
             disabled={settings.saving}
             onValueChange={(showSidebar) =>
-              void settings.save({ showSidebar }, settings.revision)
+              void settings.save(
+                { ...settings.values, showSidebar },
+                settings.revision,
+              )
+            }
+          />
+
+          <SettingsSwitch
+            label="Show workspace header button"
+            hint="Command-K and the sidebar remain available when this button is hidden."
+            value={settings.values.enable_header_button}
+            disabled={settings.saving}
+            onValueChange={(enable_header_button) =>
+              void settings.save(
+                { ...settings.values, enable_header_button },
+                settings.revision,
+              )
             }
           />
         </SettingsCard>
+        {settings.saveError && (
+          <Text
+            accessibilityRole="alert"
+            style={{ color: theme.colors.statusDanger }}
+          >
+            {settings.saveError}
+          </Text>
+        )}
       </SettingsSection>
-      {settings.saveError && (
-        <Text
-          accessibilityRole="alert"
-          style={{ color: theme.colors.statusDanger }}
-        >
-          {settings.saveError}
-        </Text>
-      )}
-    </View>
+    </ScrollView>
   );
 }
 
-export function contributeDisplay(client: PluginClientContext) {
-  let removeSidebar: (() => void) | null = null;
-  let disposed = false;
-  let pending = false;
-  let generation = 0;
-  const show = (visible: boolean) => {
-    if (disposed) return;
-    if (visible && !removeSidebar)
-      removeSidebar = client.addSidebarItem({
-        id: "transfer",
-        title: "Transfer",
-        icon: "ArrowRightLeft",
-        surface: "transfer",
-      });
-    if (!visible && removeSidebar) {
-      removeSidebar();
-      removeSidebar = null;
-    }
-  };
-  const notify = (visible: boolean) => {
-    generation += 1;
-    show(visible);
-  };
-  listeners.add(notify);
+/** Settings notifications reach mounted screens; poll for changes made on other clients. */
+export function contributeDisplay(
+  client: PluginClientContext,
+  item: PluginSidebarContribution = {
+    id: "transfer",
+    title: "Transfer",
+    icon: "ArrowRightLeft",
+    surface: "transfer",
+  },
+) {
+  const sidebar = sidebarVisibility(() => client.addSidebarItem(item));
+  // Paseo 0.10.1 memoizes sidebar route resolution when an installation mounts.
+  // Register synchronously, then reconcile the saved preference, so that an
+  // already-open sidebar route can resolve its surface during that first render.
+  sidebar.set(true);
+  const Settings = withNavigation(
+    DisplaySettings,
+    client,
+    item.surface,
+    "display",
+  );
+  const removeSurface = client.addSurface("display-settings", Settings);
   const removeSettings = client.addSettingsScreen({
     id: "display",
     title: "Display",
     icon: "PanelLeft",
-    Component: DisplaySettings,
+    Component: Settings,
   });
+  const removeCommand = client.addCommandCenterItem({
+    id: "display-settings",
+    title: `${item.title}: display settings`,
+    icon: "PanelLeft",
+    keywords: [item.title, "sidebar", "show", "hide", "display", "settings"],
+    context: "global",
+    onSelect({ openSurface }) {
+      openSurface("display-settings");
+    },
+  });
+  let disposed = false;
+  let pending = false;
+  let generation = 0;
+  const update = (values: Display) => {
+    generation += 1;
+    sidebar.set(values.showSidebar);
+  };
+  listeners.add(update);
   const refresh = async () => {
     if (disposed || pending) return;
     pending = true;
-    const current = generation;
+    const currentGeneration = generation;
     try {
       const result = await client.rpc(displayRpc.read, {});
-      if (!disposed && generation === current && result.status === "ready") {
-        const values = displayPreferences.schema.safeParse(result.values);
-        if (values.success) show(values.data.showSidebar);
+      if (
+        !disposed &&
+        generation === currentGeneration &&
+        result.status === "ready"
+      ) {
+        const parsed = displayPreferences.schema.safeParse(result.values);
+        if (parsed.success) {
+          sidebar.set(parsed.data.showSidebar);
+          for (const listener of listeners) listener(parsed.data);
+        }
       }
     } catch {
-      /* Keep the last saved preference until reconnect. */
+      // Retain the last valid preference through temporary disconnects.
     } finally {
       pending = false;
     }
@@ -121,8 +189,10 @@ export function contributeDisplay(client: PluginClientContext) {
   return () => {
     disposed = true;
     clearInterval(timer);
-    listeners.delete(notify);
-    removeSidebar?.();
+    listeners.delete(update);
+    sidebar.dispose();
+    removeSurface();
     removeSettings();
+    removeCommand();
   };
 }
