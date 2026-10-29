@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0 — 2026-10-29
+
+`transfer_list_hosts` discovers configured SSH and Tailscale destinations; `transfer_run_status` reads an existing transfer’s progress. Transfers still use the preview and confirmation flow in the Transfer screen.
+
+Requires Paseo 0.14.0 or newer. This release raises the previous minimum supported Paseo version. Plugin data and settings are preserved.
+
+Install: `paseo plugin install paseo-transfer`
+
 ## 1.2.0
 
 - Transfer directly between connected Paseo hosts with the plugin on both, reusing Transcript Search's host federation and Send to Paseo's explicit server targeting.
