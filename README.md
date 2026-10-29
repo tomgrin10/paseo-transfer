@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/paseo-transfer?style=for-the-badge&color=cb3837)](https://www.npmjs.com/package/paseo-transfer)
 [![npm downloads](https://img.shields.io/npm/dm/paseo-transfer?style=for-the-badge&color=cb3837)](https://www.npmjs.com/package/paseo-transfer)
-[![Paseo](https://img.shields.io/badge/Paseo-%E2%89%A5%200.11.0-8A63D2?style=for-the-badge)](https://paseo.sh)
+[![Paseo](https://img.shields.io/badge/Paseo-%E2%89%A5%200.14.0-8A63D2?style=for-the-badge)](https://paseo.sh)
 [![License](https://img.shields.io/github/license/tomgrin10/paseo-transfer?style=for-the-badge&color=2563eb)](LICENSE)
 
 Copy or move a workspace to another host, with Git history, local changes, and Claude/Codex conversations.
@@ -19,7 +19,7 @@ Enable plugins in **Settings → Plugins**, then run on both hosts:
 paseo plugin install paseo-transfer
 ```
 
-Both hosts need Paseo **0.11.0+**, Node **22+**, Git, and Linux/macOS or WSL. Connect both hosts in Paseo and keep their daemons running. The receiving host needs its own provider CLIs and credentials.
+Both hosts need Paseo **0.14.0+**, Node **22+**, Git, and Linux/macOS or WSL. Connect both hosts in Paseo and keep their daemons running. The receiving host needs its own provider CLIs and credentials.
 
 ## Use
 
@@ -55,6 +55,16 @@ Reload with `paseo plugin reload transfer`. Provider checks: `npm run test:live`
 Open this plugin from Command-K or its sidebar entry. **Overview** and **Display settings** link the main view and settings directly, without opening the Plugins settings page. Hiding a sidebar entry keeps Command-K available.
 
 Display settings can also hide this plugin's workspace header or composer buttons independently. Hidden buttons stay hidden for newly opened workspaces; restoring them retains the latest button status.
+
+## Paseo 0.14 agent integration
+
+`transfer_list_hosts` discovers configured SSH and Tailscale destinations; `transfer_run_status` reads an existing transfer’s progress. Transfers still use the preview and confirmation flow in the Transfer screen.
+
+Requires Paseo **0.14.0 or newer**. Agent tools are scoped to interactive Claude
+and Codex sessions; history-only opens receive none. They become available on
+the next idle session open after install or reload. The agent label
+`plugin-tools/enabled: "false"` opts a session out. Existing plugin data and
+settings are retained.
 
 ## Other plugins
 

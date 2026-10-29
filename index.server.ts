@@ -1,3 +1,4 @@
+import { contributeAgentTools } from "./server/native-tools";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { hostsRpc, listRpc, previewRpc, runRpc, statusRpc } from "./shared/rpc";
 import { displayPreferences } from "./shared/display";
@@ -11,6 +12,7 @@ import {
   dispose,
 } from "./server/handlers";
 export default function contribute(server: PluginServerContext) {
+  const removeTools = contributeAgentTools(server);
   const releaseConnected = contributeConnected(server);
   server.registerSettings(displayPreferences);
   server.handle(hostsRpc, hosts);
@@ -19,6 +21,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(runRpc, start);
   server.handle(statusRpc, status);
   return async () => {
+    removeTools();
     dispose();
     await releaseConnected();
   };
