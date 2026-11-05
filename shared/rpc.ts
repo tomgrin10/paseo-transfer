@@ -80,6 +80,8 @@ export const statusRpc = defineRpc({
     message: z.string(),
     /** Presentation only: when each step ran, for the stage rail. Absent before 2.1. */
     mode: z.enum(["copy", "move"]).optional(),
+    /** The SSH destination it goes to; empty when it lands on the host that runs it. */
+    targetHost: z.string().optional(),
     stages: z.array(stageRecord).optional(),
     startedAt: z.number().optional(),
     endedAt: z.number().optional(),

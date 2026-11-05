@@ -499,6 +499,7 @@ test("move verifies target and archives source through Paseo", async () => {
     status({ runId }).stages.map((stage) => stage.id),
     ["check", "copy", "archive"],
   );
+  assert.equal(status({ runId }).targetHost, "");
   assert.ok(status({ runId }).endedAt! >= status({ runId }).startedAt);
   assert.ok(
     !(await cli(sourceHome, "workspace", "ls")).some(

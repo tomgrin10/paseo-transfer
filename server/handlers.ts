@@ -28,6 +28,8 @@ type Run = {
   message: string;
   result: TransferResult | null;
   mode: "copy" | "move";
+  /** The SSH destination it goes to, or "" when it lands on this host. */
+  targetHost: string;
   stages: StageRecord[];
   startedAt: number;
   endedAt?: number;
@@ -99,6 +101,7 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
     message: "Checking source…",
     result: null,
     mode: cached.plan.mode,
+    targetHost: cached.input.target.target,
     stages: [{ id: "check", startedAt }],
     startedAt,
   };

@@ -23,6 +23,8 @@ export const ToolRowSchema = z.object({
       cwd: z.string(),
       archived: z.boolean(),
       took: z.string(),
+      /** Where it went: an SSH destination, or "" for the host that ran it. */
+      host: z.string().default(""),
     })
     .nullable(),
   error: z.string(),
@@ -126,6 +128,7 @@ export function toolRow(
             message: str(output!.message, 600),
             cwd: result ? str(result.cwd, 300) : "",
             archived: result?.sourceArchived === true,
+            host: str(output!.targetHost, 120),
             took:
               started !== null && ended !== null
                 ? formatDuration(ended - started)
@@ -157,5 +160,6 @@ export function rowLine(row: ToolRow): string {
   if (row.run.state === "running")
     return `Transfer running · ${row.run.message}`;
   if (row.run.state === "failed") return "Checked the transfer · it stopped";
-  return `Checked the transfer · ${row.run.archived ? "moved" : "copied"} and verified${row.run.took ? ` in ${row.run.took}` : ""}`;
+  const where = row.run.host ? ` to ${row.run.host}` : "";
+  return `Checked the transfer · ${row.run.archived ? "moved" : "copied"}${where} and verified${row.run.took ? ` in ${row.run.took}` : ""}`;
 }

@@ -45,6 +45,7 @@ test("status reads say how the transfer ended, with its time", () => {
         state: "done",
         message: "Workspace moved and verified.",
         result: { cwd: "/home/dana/Projects/x", sourceArchived: true },
+        targetHost: "build-box",
         startedAt: 0,
         endedAt: 21_000,
       }),
@@ -53,7 +54,7 @@ test("status reads say how the transfer ended, with its time", () => {
   )!;
   assert.equal(
     rowLine(done),
-    "Checked the transfer · moved and verified in 21s",
+    "Checked the transfer · moved to build-box and verified in 21s",
   );
   const running = toolRow(
     "transfer_run_status",

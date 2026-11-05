@@ -76,6 +76,7 @@ function Detail({ row, theme }: { row: ToolRow; theme: Theme }) {
         ]}
       >
         {run.message}
+        {run.host ? <Text style={meta}>{`  on ${run.host}`}</Text> : null}
       </Text>
       {run.cwd ? (
         <Text selectable style={[meta, mono]}>
