@@ -1,6 +1,16 @@
 {
   "id": "transfer",
+  "name": "Transfer",
   "icon": "assets/icon.png",
+  "description": "Copy or move a workspace to another host with its Git history, local changes, and Claude and Codex conversations: preview what goes and what stays, watch each step land with its time, then open it on the other host.",
+  "media": [
+    "docs/media/transfer-hero.png",
+    "docs/media/transfer-flow.gif",
+    "docs/media/transfer-recovery.png",
+    "docs/media/transfer-screen.png",
+    "docs/media/transfer-mobile.png",
+    "docs/media/transfer-chat.png"
+  ],
   "requirements": {
     "paseo": ">=0.14.0"
   }

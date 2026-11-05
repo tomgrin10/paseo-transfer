@@ -199,6 +199,9 @@ export function Frame({
         {more && ground && !fill ? (
           <Fade color={ground.ground} edge="bottom" />
         ) : null}
+        {box.y > 2 && ground && !fill ? (
+          <Fade color={ground.ground} edge="top" />
+        ) : null}
       </View>
       {pinnedArea}
     </View>
