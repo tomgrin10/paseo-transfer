@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 3.0.0 — 2026-11-05
+
+A redesigned Transfer experience. Requires Paseo 0.14.0 or newer; plugin data and settings are preserved.
 
 - The popup reads as a route and a receipt: destination hosts as cards with their status, then a preview of exactly what goes (branch, files with uncommitted changes, each conversation) and what stays (ignored files, sign-ins, MCP settings, the source workspace).
 - Progress shows each step with its own time: check the source, copy (with the bytes sent), verify and import on the destination, archive for a move. Closing the popup is still safe; the Transfer button's icon fills as it runs and ends in a check or a cross, with a toast.
@@ -9,6 +11,8 @@
 - The Transfer screen sends or brings workspaces in two columns, keeps this session's transfers in a list, and uses `addScreen`/`addSidebarHeaderItem` instead of the deprecated surface APIs. ⌘K **Transfer this workspace** opens it with the current workspace selected.
 - `transfer_list_hosts` and `transfer_run_status` calls show in chats as one-line rows.
 - Transfer behavior, verification and safety checks are unchanged.
+
+Install: `paseo plugin install paseo-transfer`
 
 ## 2.0.0 — 2026-10-29
 
