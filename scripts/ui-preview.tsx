@@ -13,7 +13,7 @@ import {createRoot} from 'react-dom/client';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {PluginRpcProvider} from '${process.cwd()}/node_modules/@getpaseo/plugin/dist/client/host.js';
 import {federation} from '${process.cwd()}/client/federation';
-import {TransferSurface,TransferPopover} from '${process.cwd()}/client/surface';
+import {TransferScreen,TransferPopover} from '${process.cwd()}/client/screen';
 const light=new URLSearchParams(location.search).has('light');
 const theme={colors:{surface0:'#15171b',surface1:'#1e2126',surface2:'#2a2e35',border:'#3b414b',foreground:'#eceef2',foregroundMuted:'#aeb6c2',accent:'#8fb7fa',accentForeground:'#111a29',statusSuccess:'#76d6a1',statusWarning:'#e9c274',statusDanger:'#ff9a9a'}};
 if(light)Object.assign(theme.colors,{surface0:'#ffffff',surface1:'#f4f5f7',surface2:'#e7eaf0',border:'#a3aab5',foreground:'#202630',foregroundMuted:'#515b6b',accent:'#2556a8',accentForeground:'#ffffff',statusDanger:'#a92525'});
@@ -41,9 +41,21 @@ for(const element of [document.documentElement,document.body,document.getElement
 const client=new QueryClient();
 window.fixtureCalls=[];
 const recordedInvoke=async(method,input)=>{window.fixtureCalls.push({method,input});return invoke(method,input);};
-function App(){const [compact,setCompact]=React.useState(innerWidth<700);const [open,setOpen]=React.useState(false);React.useEffect(()=>{const change=()=>setCompact(innerWidth<700);addEventListener('resize',change);return()=>removeEventListener('resize',change);},[]);const props={theme,host:{id:'fixture',label:'Build host'},layout:{compact,platform:'web'}};const page=new URLSearchParams(location.search).has('screen');return <QueryClientProvider client={client}><PluginRpcProvider invoke={recordedInvoke}>{page?<TransferSurface {...props}/>:<div style={{maxWidth:760,margin:'32px auto',padding:'0 16px',fontFamily:'system-ui',color:theme.colors.foreground}}><header style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,borderBottom:'1px solid '+theme.colors.border,paddingBottom:16}}><span style={{fontSize:16,fontWeight:600}}>Release workflow</span><button aria-expanded={open} aria-controls="transfer-popup" onClick={()=>setOpen(!open)} style={{background:theme.colors.surface1,color:theme.colors.foreground,border:'1px solid '+theme.colors.border,borderRadius:6,padding:'10px 14px',fontSize:14,cursor:'pointer'}}>Transfer</button></header>{open&&<div role="dialog" aria-label="Transfer this workspace" id="transfer-popup" style={{display:'flex',flexDirection:'column',boxSizing:'border-box',marginTop:12,marginLeft:'auto',width:compact?'100%':420,maxHeight:440,border:'1px solid '+theme.colors.border,borderRadius:8,overflow:'auto',padding:12,boxShadow:'0 8px 24px rgba(0,0,0,.25)'}}><TransferPopover {...props} context="workspace" workspaceId="fixture" close={()=>setOpen(false)}/></div>}</div>}</PluginRpcProvider></QueryClientProvider>;}
+function App(){const [compact,setCompact]=React.useState(innerWidth<700);const [open,setOpen]=React.useState(false);React.useEffect(()=>{const change=()=>setCompact(innerWidth<700);addEventListener('resize',change);return()=>removeEventListener('resize',change);},[]);const props={theme,host:{id:'fixture',label:'Build host'},layout:{compact,platform:'web'}};const page=new URLSearchParams(location.search).has('screen');return <QueryClientProvider client={client}><PluginRpcProvider invoke={recordedInvoke}>{page?<TransferScreen {...props} params={{}}/>:<div style={{maxWidth:760,margin:'32px auto',padding:'0 16px',fontFamily:'system-ui',color:theme.colors.foreground}}><header style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,borderBottom:'1px solid '+theme.colors.border,paddingBottom:16}}><span style={{fontSize:16,fontWeight:600}}>Release workflow</span><button aria-expanded={open} aria-controls="transfer-popup" onClick={()=>setOpen(!open)} style={{background:theme.colors.surface1,color:theme.colors.foreground,border:'1px solid '+theme.colors.border,borderRadius:6,padding:'10px 14px',fontSize:14,cursor:'pointer'}}>Transfer</button></header>{open&&<div role="dialog" aria-label="Transfer this workspace" id="transfer-popup" style={{display:'flex',flexDirection:'column',boxSizing:'border-box',marginTop:12,marginLeft:'auto',width:compact?'100%':420,maxHeight:440,border:'1px solid '+theme.colors.border,borderRadius:8,overflow:'auto',padding:12,boxShadow:'0 8px 24px rgba(0,0,0,.25)'}}><TransferPopover {...props} context="workspace" workspaceId="fixture" close={()=>setOpen(false)} openScreen={()=>{}}/></div>}</div>}</PluginRpcProvider></QueryClientProvider>;}
 createRoot(document.getElementById('root')).render(<App/>);
 `,
+);
+const uiShim = path.join(temp, "ui-shim.tsx");
+await fs.writeFile(
+  uiShim,
+  `import React from 'react';
+import {ScrollView as RNScrollView, TextInput as RNTextInput, Text} from 'react-native';
+export const ScrollView = RNScrollView;
+export const TextInput = RNTextInput;
+export function Icon({name, size = 14, color}: {name?: string; size?: number; color?: string}) {
+  return <Text style={{width: size, height: size, fontSize: size * 0.7, lineHeight: size, color, textAlign: 'center'}}>{name ? '•' : '○'}</Text>;
+}
+export function useToast() { return {show() {}, error() {}}; }`,
 );
 const hostShim = path.join(temp, "host-shim.ts");
 await fs.writeFile(
@@ -59,6 +71,7 @@ await build({
   outfile: path.join(temp, "bundle.js"),
   jsx: "automatic",
   alias: {
+    "@getpaseo/plugin/client/ui": uiShim,
     "@getpaseo/plugin/client": hostShim,
     "react-native": path.join(process.cwd(), "node_modules/react-native-web"),
     react: path.join(process.cwd(), "node_modules/react"),

@@ -7,6 +7,7 @@ import type {
   TransferResult,
   WorkerRequest,
 } from "../shared/types";
+import { closeStages, enterStage, type StageRecord } from "../shared/progress";
 import { discover } from "./discovery";
 import { invoke, disposeTransport } from "./transport";
 
@@ -22,14 +23,18 @@ type Cached = {
   expires: number;
 };
 const plans = new Map<string, Cached>();
-const runs = new Map<
-  string,
-  {
-    state: "running" | "done" | "failed";
-    message: string;
-    result: TransferResult | null;
-  }
->();
+type Run = {
+  state: "running" | "done" | "failed";
+  message: string;
+  result: TransferResult | null;
+  mode: "copy" | "move";
+  /** The SSH destination it goes to, or "" when it lands on this host. */
+  targetHost: string;
+  stages: StageRecord[];
+  startedAt: number;
+  endedAt?: number;
+};
+const runs = new Map<string, Run>();
 let disposed = false;
 let busy = false;
 export async function preview(input: RpcInput<typeof previewRpc>) {
@@ -90,11 +95,16 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
   plans.delete(planId);
   busy = true;
   const runId = randomUUID();
-  const run: {
-    state: "running" | "done" | "failed";
-    message: string;
-    result: TransferResult | null;
-  } = { state: "running", message: "Checking source…", result: null };
+  const startedAt = Date.now();
+  const run: Run = {
+    state: "running",
+    message: "Checking source…",
+    result: null,
+    mode: cached.plan.mode,
+    targetHost: cached.input.target.target,
+    stages: [{ id: "check", startedAt }],
+    startedAt,
+  };
   runs.set(runId, run);
   for (const [id, old] of runs)
     if (runs.size > 8 && old.state !== "running") runs.delete(id);
@@ -109,6 +119,7 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
           "Source changed since preview. Preview it again before transferring.",
         );
       if (disposed) throw new Error("Transfer is shutting down.");
+      run.stages = enterStage(run.stages, "copy");
       run.message = "Copying and verifying workspace…";
       const result = await invoke<TransferResult>(cached.input.target, {
         action: "receive",
@@ -125,6 +136,7 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
           throw new Error(
             "Transfer was reloaded; target is copied but source was kept open.",
           );
+        run.stages = enterStage(run.stages, "archive");
         run.message = "Destination verified. Archiving source…";
         await invoke(cached.input.source, {
           action: "archive",
@@ -133,6 +145,7 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
         } satisfies WorkerRequest);
         result.sourceArchived = true;
       }
+      run.stages = closeStages(run.stages);
       run.state = "done";
       run.message =
         cached.plan.mode === "move"
@@ -142,6 +155,7 @@ export function start({ planId }: RpcInput<typeof runRpc>) {
       run.state = "failed";
       run.message = (error as Error).message;
     } finally {
+      run.endedAt = Date.now();
       busy = false;
     }
   })();

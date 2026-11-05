@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- The popup reads as a route and a receipt: destination hosts as cards with their status, then a preview of exactly what goes (branch, files with uncommitted changes, each conversation) and what stays (ignored files, sign-ins, MCP settings, the source workspace).
+- Progress shows each step with its own time: check the source, copy (with the bytes sent), verify and import on the destination, archive for a move. Closing the popup is still safe; the Transfer button's icon fills as it runs and ends in a check or a cross, with a toast.
+- A finished transfer offers **Open on <host>** from the popup too. A failure says where each copy is now (source still open, nothing kept or a partial copy kept for recovery) and folds the raw command output under **Show details**.
+- Preview problems sit next to their fix: a Move blocked by ignored files offers **Use Copy instead**; an existing folder, running agents and conversations that can't travel are named in plain words.
+- The Transfer screen sends or brings workspaces in two columns, keeps this session's transfers in a list, and uses `addScreen`/`addSidebarHeaderItem` instead of the deprecated surface APIs. ⌘K **Transfer this workspace** opens it with the current workspace selected.
+- `transfer_list_hosts` and `transfer_run_status` calls show in chats as one-line rows.
+- Transfer behavior, verification and safety checks are unchanged.
+
 ## 2.0.0 — 2026-10-29
 
 `transfer_list_hosts` discovers configured SSH and Tailscale destinations; `transfer_run_status` reads an existing transfer’s progress. Transfers still use the preview and confirmation flow in the Transfer screen.

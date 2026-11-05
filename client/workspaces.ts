@@ -3,12 +3,16 @@ import type {
   PluginClientContext,
 } from "@getpaseo/plugin/client";
 import type { ComponentType } from "react";
-import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
+import type {
+  PluginButtonContentProps,
+  PluginButtonIcon,
+} from "@getpaseo/plugin/client";
 
 /** Follow every open workspace without taking over the app's subscription. */
 export function contributeWorkspaceButtons(
   client: PluginClientContext,
   Content: ComponentType<PluginButtonContentProps>,
+  icon: PluginButtonIcon = "ArrowRightLeft",
 ) {
   const buttons = new Map<string, PluginButtonRegistration>();
   let disposed = false;
@@ -51,7 +55,7 @@ export function contributeWorkspaceButtons(
               button: {
                 title: "Transfer this workspace",
                 label: "Transfer",
-                icon: "ArrowRightLeft",
+                icon,
                 behavior: { kind: "popover", Content },
               },
             }),

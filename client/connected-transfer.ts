@@ -10,6 +10,12 @@ import {
   type ExportManifest,
 } from "../shared/connected";
 import type { Plan, TransferResult } from "../shared/types";
+import {
+  closeStages,
+  enterStage,
+  type StageId,
+  type StageRecord,
+} from "../shared/progress";
 import { rpcForHost, type HostRpc } from "./federation";
 
 export interface ConnectedPlan extends Plan {
@@ -26,6 +32,16 @@ export interface ConnectedRun {
   message: string;
   result: TransferResult | null;
   targetId: string;
+  sourceId: string;
+  mode: "copy" | "move";
+  /** When each stage started and ended, for the stage rail. */
+  stages: StageRecord[];
+  /** Copy progress, 0–1, while chunks travel. */
+  copied: number;
+  startedAt: number;
+  endedAt?: number;
+  /** The failure's cause, without the recovery sentence in `message`. */
+  error?: string;
 }
 type Task = RpcInput<typeof taskStart>["task"];
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,7 +52,17 @@ export function createTransferClient(
   pause = delay,
 ) {
   const runs = new Map<string, ConnectedRun>();
+  const listeners = new Set<() => void>();
   let sequence = 0;
+  // Each change replaces the run object, so subscribers can compare by identity.
+  const update = (id: string, patch: Partial<ConnectedRun>) => {
+    const run = runs.get(id);
+    if (!run) return;
+    runs.set(id, { ...run, ...patch });
+    for (const listener of listeners) listener();
+  };
+  const stage = (id: string, stageId: StageId) =>
+    update(id, { stages: enterStage(runs.get(id)!.stages, stageId) });
   async function task(serverId: string, value: Task) {
     const { id } = await getRpc(serverId)(taskStart, { serverId, task: value });
     try {
@@ -123,13 +149,19 @@ export function createTransferClient(
       for (const [id, run] of runs)
         if (runs.size >= 8 && run.state !== "running") runs.delete(id);
       const id = `connected-${Date.now()}-${++sequence}`;
-      const run: ConnectedRun = {
+      const startedAt = Date.now();
+      runs.set(id, {
         state: "running",
         message: "Checking source…",
         result: null,
         targetId: plan.connected.targetId,
-      };
-      runs.set(id, run);
+        sourceId: plan.connected.sourceId,
+        mode: plan.mode,
+        stages: [{ id: "check", startedAt }],
+        copied: 0,
+        startedAt,
+      });
+      for (const listener of listeners) listener();
       void (async () => {
         const { sourceId, targetId } = plan.connected;
         let freshId = "",
@@ -152,8 +184,12 @@ export function createTransferClient(
             checksum: manifest.checksum,
           });
           uploadId = upload.id;
+          stage(id, "copy");
           for (let index = 0; index < manifest.chunks; index++) {
-            run.message = `Copying workspace… ${Math.floor((index / manifest.chunks) * 100)}%`;
+            update(id, {
+              message: `Copying workspace… ${Math.floor((index / manifest.chunks) * 100)}%`,
+              copied: index / manifest.chunks,
+            });
             const { data } = await getRpc(sourceId)(readChunk, {
               serverId: sourceId,
               id: freshId,
@@ -166,7 +202,11 @@ export function createTransferClient(
               data,
             });
           }
-          run.message = "Verifying destination and importing conversations…";
+          stage(id, "verify");
+          update(id, {
+            copied: 1,
+            message: "Verifying destination and importing conversations…",
+          });
           const received = await task(targetId, {
             action: "receive",
             uploadId,
@@ -178,22 +218,33 @@ export function createTransferClient(
             throw new Error(
               "Destination did not verify the transfer. Source has been kept open.",
             );
-          run.result = result;
+          update(id, { result });
           if (plan.mode === "move") {
-            run.message = "Destination verified. Archiving source…";
+            stage(id, "archive");
+            update(id, { message: "Destination verified. Archiving source…" });
             const archived = await task(sourceId, {
               action: "archive",
               workspaceId: plan.workspace.workspaceId,
               fingerprint: manifest.fingerprint,
             });
             await release(sourceId, archived.id);
-            result.sourceArchived = true;
+            update(id, { result: { ...result, sourceArchived: true } });
           }
-          run.state = "done";
-          run.message = `Workspace ${plan.mode === "move" ? "moved" : "copied"} and verified.`;
+          const now = Date.now();
+          update(id, {
+            state: "done",
+            message: `Workspace ${plan.mode === "move" ? "moved" : "copied"} and verified.`,
+            stages: closeStages(runs.get(id)!.stages, now),
+            endedAt: now,
+          });
         } catch (error) {
-          run.state = "failed";
-          run.message = `${(error as Error).message}${run.result ? " The verified destination is available; check both hosts before retrying." : " Check the target before retrying. The source has not been removed by Transfer."}`;
+          const verified = Boolean(runs.get(id)?.result);
+          update(id, {
+            state: "failed",
+            error: (error as Error).message,
+            message: `${(error as Error).message}${verified ? " The verified destination is available; check both hosts before retrying." : " Check the target before retrying. The source has not been removed by Transfer."}`,
+            endedAt: Date.now(),
+          });
         } finally {
           await release(sourceId, plan.connected.exportId);
           if (freshId) await release(sourceId, freshId);
@@ -201,6 +252,17 @@ export function createTransferClient(
         }
       })();
       return { runId: id };
+    },
+    /** Called after every change to any run in this app. */
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    /** The run, or undefined after an app reload; never throws. */
+    peek(id: string) {
+      return runs.get(id);
     },
     status(id: string) {
       const run = runs.get(id);
