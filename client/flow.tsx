@@ -7,7 +7,7 @@ import {
 } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { Icon } from "@getpaseo/plugin/client/ui";
-import { formatDuration, plural } from "../shared/progress";
+import { formatDuration, plainCause, plural } from "../shared/progress";
 import { Button, Card, text } from "./kit";
 import { PressScale, Reveal, Spinner } from "./motion";
 import {
@@ -22,7 +22,7 @@ import {
   StageRail,
 } from "./parts";
 import { runs, type RunView } from "./runs";
-import { mono, type Theme } from "./theme";
+import { mono, withAlpha, type Theme } from "./theme";
 import type { TransferModel } from "./use-transfer";
 
 const verb = (mode: "copy" | "move") => (mode === "move" ? "Move" : "Copy");
@@ -52,31 +52,60 @@ export function Actions({
   );
 }
 
+/** The ground the pinned frame sits on, for its fade: the popover's surface1, or the screen's. */
+const FrameGround = createContext<{ ground: string; border: string } | null>(
+  null,
+);
+export const FrameTheme = FrameGround.Provider;
+
+/** A soft fade into the ground: stacked strips, since plugins have no gradient primitive. */
+function Fade({ color, edge }: { color: string; edge: "top" | "bottom" }) {
+  const steps = [0.12, 0.3, 0.5, 0.7, 0.86, 0.96];
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        [edge]: 0,
+        flexDirection: edge === "bottom" ? "column" : "column-reverse",
+      }}
+    >
+      {steps.map((alpha) => (
+        <View
+          key={alpha}
+          style={{ height: 4, backgroundColor: withAlpha(color, alpha) }}
+        />
+      ))}
+    </View>
+  );
+}
+
 /**
  * A state's body with its actions. In the desktop popup (a fixed-height scroll box) the body
- * scrolls on its own and the actions stay pinned below it, so the primary is never cut off.
+ * scrolls on its own and the actions stay pinned below it, so the primary is never cut off; a
+ * fade at the cut says there is more. "fill" does the same for a whole phone screen.
  */
-const FrameColor = createContext<string | null>(null);
-const useFrameColors = () => useContext(FrameColor);
-/** Lets the pinned frame draw its hairline in the host's border colour. */
-export const FrameTheme = FrameColor.Provider;
-
 export function Frame({
   pinned = false,
   gap = 14,
   children,
   notice,
   actions,
+  padding = 0,
 }: {
-  pinned?: boolean;
+  pinned?: boolean | "fill";
   gap?: number;
   children: ReactNode;
   /** A problem to keep in view: pinned above the actions in the popup. */
   notice?: ReactNode;
   actions?: ReactNode;
+  /** Side padding for "fill", where the frame is the screen. */
+  padding?: number;
 }) {
-  const [box, setBox] = useState({ view: 0, content: 0, notice: 0 });
-  const c = useFrameColors();
+  const [box, setBox] = useState({ view: 0, content: 0, notice: 0, y: 0 });
+  const ground = useContext(FrameGround);
   if (!pinned)
     return (
       <View style={{ gap }}>
@@ -85,43 +114,78 @@ export function Frame({
         {actions}
       </View>
     );
+  const fill = pinned === "fill";
   // The body gets what the popup's fixed box leaves after the pinned notice and actions.
   const room = (actions ? 356 : 408) - (notice ? box.notice + 12 : 0);
-  const scrolls = box.content > box.view + 1;
-  return (
-    <View style={{ gap: 12 }}>
-      <ScrollView
-        style={{ maxHeight: Math.max(160, room), flexGrow: 0 }}
-        contentContainerStyle={{ gap }}
-        onLayout={(event) => {
-          const view = event.nativeEvent.layout.height;
-          setBox((value) => (value.view === view ? value : { ...value, view }));
-        }}
-        onContentSizeChange={(_, content) =>
-          setBox((value) =>
-            value.content === content ? value : { ...value, content },
-          )
+  const more = box.content > box.view + 1 && box.y + box.view < box.content - 2;
+  const pinnedArea =
+    notice || actions ? (
+      <View
+        style={
+          fill
+            ? {
+                gap: 12,
+                paddingHorizontal: padding,
+                paddingTop: 12,
+                paddingBottom: 16,
+                borderTopWidth: more && ground ? 1 : 0,
+                borderTopColor: ground?.border,
+              }
+            : { gap: 12 }
         }
       >
-        {children}
-      </ScrollView>
-      {/* A hairline says the body continues above when it scrolls. */}
-      {scrolls && c ? (
-        <View style={{ height: 1, marginTop: -6, backgroundColor: c }} />
-      ) : null}
-      {notice ? (
-        <View
-          onLayout={(event) => {
-            const height = event.nativeEvent.layout.height;
+        {notice ? (
+          <View
+            onLayout={(event) => {
+              const height = event.nativeEvent.layout.height;
+              setBox((value) =>
+                value.notice === height ? value : { ...value, notice: height },
+              );
+            }}
+          >
+            {notice}
+          </View>
+        ) : null}
+        {actions}
+      </View>
+    ) : null;
+  return (
+    <View style={fill ? { flex: 1 } : { gap: 12 }}>
+      <View style={fill ? { flex: 1 } : null}>
+        <ScrollView
+          style={
+            fill ? { flex: 1 } : { maxHeight: Math.max(160, room), flexGrow: 0 }
+          }
+          contentContainerStyle={[
+            { gap },
+            fill ? { padding, paddingBottom: 20 } : null,
+          ]}
+          scrollEventThrottle={32}
+          onScroll={(event) => {
+            const y = event.nativeEvent.contentOffset.y;
             setBox((value) =>
-              value.notice === height ? value : { ...value, notice: height },
+              Math.abs(value.y - y) < 2 ? value : { ...value, y },
             );
           }}
+          onLayout={(event) => {
+            const view = event.nativeEvent.layout.height;
+            setBox((value) =>
+              value.view === view ? value : { ...value, view },
+            );
+          }}
+          onContentSizeChange={(_, content) =>
+            setBox((value) =>
+              value.content === content ? value : { ...value, content },
+            )
+          }
         >
-          {notice}
-        </View>
-      ) : null}
-      {actions}
+          {children}
+        </ScrollView>
+        {more && ground && !fill ? (
+          <Fade color={ground.ground} edge="bottom" />
+        ) : null}
+      </View>
+      {pinnedArea}
     </View>
   );
 }
@@ -186,26 +250,29 @@ export function PopupForm({
       gap={16}
       notice={
         generalProblem ? (
+          // A refused Move offers its fix as the primary below, not a second button here.
           <ProblemNote
             theme={theme}
             problem={generalProblem}
             compact={compact}
-            onAction={() => m.setMode("copy")}
+            onAction={m.blockedMove ? undefined : () => m.setMode("copy")}
           />
         ) : null
       }
       actions={
-        <Button
-          theme={theme}
-          kind="primary"
-          grow
-          compact={compact}
-          icon={m.previewing ? undefined : "ScanSearch"}
-          loading={m.previewing}
-          title={m.previewing ? "Checking both hosts…" : "Preview transfer"}
-          onPress={m.preview}
-          disabled={!m.canPreview}
-        />
+        m.blockedMove ? (
+          <Button
+            theme={theme}
+            kind="primary"
+            grow
+            compact={compact}
+            icon="Copy"
+            title="Use Copy instead"
+            onPress={() => m.setMode("copy")}
+          />
+        ) : (
+          <PreviewButton m={m} theme={theme} compact={compact} />
+        )
       }
     >
       <View style={{ gap: 2 }}>
@@ -243,6 +310,32 @@ export function PopupForm({
   );
 }
 
+export function PreviewButton({
+  m,
+  theme,
+  compact,
+  grow = true,
+}: {
+  m: TransferModel;
+  theme: Theme;
+  compact: boolean;
+  grow?: boolean;
+}) {
+  return (
+    <Button
+      theme={theme}
+      kind="primary"
+      grow={grow}
+      compact={compact}
+      icon={m.previewing ? undefined : "ScanSearch"}
+      loading={m.previewing}
+      title={m.previewing ? "Checking both hosts…" : "Preview transfer"}
+      onPress={m.preview}
+      disabled={!m.canPreview}
+    />
+  );
+}
+
 /** What the preview found, then the one action that starts it. */
 export function ReceiptView({
   m,
@@ -250,12 +343,17 @@ export function ReceiptView({
   compact,
   back = true,
   pinned,
+  padding,
+  after,
 }: {
   m: TransferModel;
   theme: Theme;
   compact: boolean;
   back?: boolean;
-  pinned?: boolean;
+  pinned?: boolean | "fill";
+  padding?: number;
+  /** More body content below, such as this session's transfers on the phone screen. */
+  after?: ReactNode;
 }) {
   const plan = m.plan!;
   const actions = (
@@ -275,7 +373,7 @@ export function ReceiptView({
         theme={theme}
         kind="primary"
         compact={compact}
-        grow={compact || pinned}
+        grow={compact || !!pinned}
         icon={plan.mode === "move" ? "MoveRight" : "Copy"}
         loading={m.starting}
         title={m.starting ? "Starting…" : `${verb(plan.mode)} workspace`}
@@ -285,7 +383,7 @@ export function ReceiptView({
   );
   return (
     <Reveal>
-      <Frame pinned={pinned} actions={actions}>
+      <Frame pinned={pinned} padding={padding} actions={actions}>
         <View style={{ gap: 8 }}>
           <StateTitle theme={theme} title={`Ready to ${plan.mode}`} />
           <Route
@@ -301,7 +399,7 @@ export function ReceiptView({
           receipt={m.receipt!}
           sourceLabel={m.sourceLabel}
           targetLabel={m.targetLabel}
-          dense={pinned}
+          dense={pinned === true}
         />
         {m.startError ? (
           <ProblemNote
@@ -313,6 +411,7 @@ export function ReceiptView({
             }}
           />
         ) : null}
+        {after}
       </Frame>
     </Reveal>
   );
@@ -431,6 +530,8 @@ export function RunPanel({
   onNew,
   footnote = true,
   pinned,
+  padding,
+  after,
 }: {
   run: RunView;
   theme: Theme;
@@ -439,7 +540,9 @@ export function RunPanel({
   onOpen?: () => void;
   onNew(): void;
   footnote?: boolean;
-  pinned?: boolean;
+  pinned?: boolean | "fill";
+  padding?: number;
+  after?: ReactNode;
 }) {
   const c = theme.colors;
   const t = text(c);
@@ -458,7 +561,7 @@ export function RunPanel({
   );
   if (run.state === "running")
     return (
-      <Frame pinned={pinned}>
+      <Frame pinned={pinned} padding={padding}>
         <View style={{ gap: 8 }} accessibilityLiveRegion="polite">
           <StateTitle
             theme={theme}
@@ -488,6 +591,7 @@ export function RunPanel({
             </Text>
           </View>
         ) : null}
+        {after}
       </Frame>
     );
   if (run.state === "done")
@@ -495,6 +599,7 @@ export function RunPanel({
       <Reveal>
         <Frame
           pinned={pinned}
+          padding={padding}
           actions={
             <Actions compact={compact}>
               <Button
@@ -529,26 +634,42 @@ export function RunPanel({
                 title={`${past(run.mode)} to ${run.targetLabel}`}
               />
               <Text style={t.meta}>
-                Verified in{" "}
-                {formatDuration((run.endedAt ?? Date.now()) - run.startedAt)}
+                {plural(run.files, "file")}
                 {" · "}
                 {plural(run.sessions, "conversation")}
                 {run.mode === "move" ? ` · archived on ${run.sourceLabel}` : ""}
               </Text>
             </View>
           </View>
-          <Text selectable numberOfLines={2} style={[t.meta, mono]}>
-            {run.result?.cwd ?? run.destination}
-          </Text>
+          <Route
+            theme={theme}
+            from={run.sourceLabel}
+            to={run.targetLabel}
+            destination={run.result?.cwd ?? run.destination}
+            done
+          />
           {rail}
+          {after}
         </Frame>
       </Reveal>
     );
   const lost = run.lost;
+  const cause = run.failure?.cause ?? run.message;
+  const plain = plainCause(cause, {
+    source: run.sourceLabel,
+    target: run.targetLabel,
+  });
+  // The provider's own words and the command output fold under Show details.
+  const raw = lost
+    ? null
+    : [plain !== cause ? cause : null, run.failure?.detail]
+        .filter(Boolean)
+        .join("\n\n") || null;
   return (
     <Reveal>
       <Frame
         pinned={pinned}
+        padding={padding}
         actions={
           <Actions compact={compact}>
             {lost && run.transport === "ssh" ? (
@@ -603,13 +724,12 @@ export function RunPanel({
           </View>
         </View>
         <Text selectable style={[t.body, { color: c.foreground }]}>
-          {lost ? run.message : (run.failure?.cause ?? run.message)}
+          {lost ? run.message : plain}
         </Text>
-        {run.failure?.detail ? (
-          <Details theme={theme} text={run.failure.detail} />
-        ) : null}
-        {run.stages.length ? rail : null}
         <WhereThingsAre theme={theme} run={run} />
+        {raw ? <Details theme={theme} text={raw} /> : null}
+        {run.stages.length ? rail : null}
+        {after}
       </Frame>
     </Reveal>
   );

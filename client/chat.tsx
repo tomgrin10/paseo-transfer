@@ -8,6 +8,7 @@ import { Icon, ScrollView } from "@getpaseo/plugin/client/ui";
 import {
   TOOL_ROW_KIND,
   ToolRowSchema,
+  homePath,
   rowLine,
   toolRow,
   type ToolRow,
@@ -78,12 +79,10 @@ function Detail({ row, theme }: { row: ToolRow; theme: Theme }) {
       </Text>
       {run.cwd ? (
         <Text selectable style={[meta, mono]}>
-          {run.cwd}
+          {homePath(run.cwd)}
         </Text>
       ) : null}
-      <Text selectable style={[meta, mono]}>
-        {row.runId}
-      </Text>
+      {row.runId ? <Text style={meta}>Run {row.runId.slice(0, 8)}</Text> : null}
     </View>
   );
 }

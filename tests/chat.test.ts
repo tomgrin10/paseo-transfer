@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rowLine, toolRow, transferToolName } from "../shared/chat";
+import { homePath, rowLine, toolRow, transferToolName } from "../shared/chat";
 
 test("Transfer's tools are recognised under every provider's naming", () => {
   assert.equal(transferToolName("mcp__paseo__transfer_list_hosts"), "hosts");
@@ -79,4 +79,10 @@ test("status reads say how the transfer ended, with its time", () => {
   )!;
   assert.equal(rowLine(failed), "Couldn't read the transfer");
   assert.equal(failed.error, "unavailable");
+});
+
+test("paths read home-relative", () => {
+  assert.equal(homePath("/home/dana/Projects/x"), "~/Projects/x");
+  assert.equal(homePath("/Users/dana"), "~");
+  assert.equal(homePath("/srv/work/x"), "/srv/work/x");
 });

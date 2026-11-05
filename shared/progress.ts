@@ -274,3 +274,32 @@ export function ringFraction(stages: Stage[], copied: number): number {
     (done + (copying ? Math.min(1, Math.max(0, copied)) : 0)) / stages.length
   );
 }
+
+/**
+ * One plain sentence for a run's failure, naming the host where it happened. The cause itself
+ * (often a provider's own error) stays available as detail.
+ */
+export function plainCause(
+  cause: string,
+  hosts: { source: string; target: string },
+): string {
+  if (
+    /Failed to import agent|did not return an agent ID|Imported agent verification failed/i.test(
+      cause,
+    )
+  )
+    return `${hosts.target} couldn't import one of the conversations.`;
+  if (
+    /^(File|Git HEAD|Staged changes|Transcript|Workspace registration) verification failed/i.test(
+      cause,
+    )
+  )
+    return `The copy on ${hosts.target} didn't match the source.`;
+  if (/checksum mismatch|invalid size or encoding|out of order/i.test(cause))
+    return "The transfer data was damaged on the way.";
+  if (/changed since preview|changed during transfer/i.test(cause))
+    return `The workspace on ${hosts.source} changed after the preview. Preview it again.`;
+  if (/archive verification failed/i.test(cause))
+    return `${hosts.source} didn't archive the workspace.`;
+  return cause;
+}

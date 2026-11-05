@@ -26,7 +26,8 @@
     "server/",
     "shared/",
     "scripts/build.mjs",
-    "docs/"
+    "docs/behavior.md",
+    "docs/media/"
   ],
   "scripts": {
     "prepare": "node scripts/build.mjs",

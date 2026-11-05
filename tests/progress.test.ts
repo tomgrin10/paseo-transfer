@@ -8,6 +8,7 @@ import {
   enterStage,
   formatBytes,
   formatDuration,
+  plainCause,
   progressGlyph,
   readFailure,
   ringFraction,
@@ -186,4 +187,27 @@ test("preview problems land where they can be fixed, with only accepted actions"
     "conversations",
   );
   assert.equal(classifyProblem("Something else", "copy").place, "general");
+});
+
+test("failures read as one plain sentence naming the host", () => {
+  const hosts = { source: "Laptop", target: "Build server" };
+  assert.equal(
+    plainCause(
+      "Failed to import agent: Failed to resume Codex thread a17e: model provider not found",
+      hosts,
+    ),
+    "Build server couldn't import one of the conversations.",
+  );
+  assert.equal(
+    plainCause("File verification failed: src/app.ts", hosts),
+    "The copy on Build server didn't match the source.",
+  );
+  assert.equal(
+    plainCause(
+      "Source changed since preview. Preview again before transferring.",
+      hosts,
+    ),
+    "The workspace on Laptop changed after the preview. Preview it again.",
+  );
+  assert.equal(plainCause("Host disconnected", hosts), "Host disconnected");
 });

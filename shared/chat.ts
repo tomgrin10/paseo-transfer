@@ -139,6 +139,11 @@ export function toolRow(
   };
 }
 
+/** Home-relative paths, as the rest of Transfer shows them. */
+export function homePath(path: string): string {
+  return path.replace(/^\/(?:home|Users)\/[^/]+(?=\/|$)/, "~");
+}
+
 /** The row's one line. */
 export function rowLine(row: ToolRow): string {
   if (row.tool === "hosts") {

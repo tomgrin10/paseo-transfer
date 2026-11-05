@@ -149,15 +149,29 @@ export function Segmented<V extends string>({
   );
 }
 
-function hostStatus(item: TransferModel["connectedHosts"][number]) {
+// When each host was first seen not connected, so a host that never comes back turns amber.
+const unreachableSince = new Map<string, number>();
+const GRACE_MS = 8000;
+
+function hostStatus(
+  item: TransferModel["connectedHosts"][number],
+  now: number,
+) {
+  if (item.status === "online") unreachableSince.delete(item.serverId);
+  else if (!unreachableSince.has(item.serverId))
+    unreachableSince.set(item.serverId, now);
   if (item.ready) return { text: "Connected", warn: false };
-  if (item.status === "connecting" || item.status === "idle")
-    return {
-      text: "Connecting… If this stays, check that Paseo is running there.",
-      warn: false,
-    };
+  const waiting = now - (unreachableSince.get(item.serverId) ?? now);
+  if (
+    (item.status === "connecting" || item.status === "idle") &&
+    waiting < GRACE_MS
+  )
+    return { text: "Connecting…", warn: false };
   if (item.status !== "online")
-    return { text: "Offline · connect it in Paseo", warn: true };
+    return {
+      text: "Not reachable · check that Paseo is running there",
+      warn: true,
+    };
   return { text: "Needs paseo-transfer installed there", warn: true };
 }
 
@@ -173,6 +187,8 @@ export function HostPicker({
 }) {
   const c = theme.colors;
   const t = text(c);
+  // Re-read host status every couple of seconds so "Connecting…" can give way to guidance.
+  const now = useNow(2000);
   if (!m.connectedHosts.length)
     return (
       <View
@@ -196,7 +212,7 @@ export function HostPicker({
     <View accessibilityRole="radiogroup" style={{ gap: 6 }}>
       {m.connectedHosts.map((item) => {
         const on = m.remoteId === item.serverId;
-        const status = hostStatus(item);
+        const status = hostStatus(item, now);
         const disabled = m.locked || !item.ready;
         return (
           <PressScale
@@ -909,7 +925,7 @@ export function ReceiptCard({
               ? undefined
               : plan.mode === "move"
                 ? `Only after ${targetLabel} verifies the copy`
-                : "Stays open here"
+                : "Stays open"
           }
         />
       </View>
@@ -1047,97 +1063,120 @@ export function StageRail({ theme, run }: { theme: Theme; run: RunView }) {
   const t = text(c);
   const now = useNow(run.state === "running" ? 1000 : 60_000);
   return (
-    <View accessibilityRole="list" style={{ paddingVertical: 4 }}>
-      {run.stages.map((stage, index) => {
-        const last = index === run.stages.length - 1;
-        const detail = stageDetail(stage, run);
-        const duration =
-          stage.startedAt && stage.endedAt
-            ? formatDuration(stage.endedAt - stage.startedAt)
-            : stage.startedAt && stage.state === "running"
-              ? formatDuration(now - stage.startedAt)
-              : stage.startedAt && stage.state === "failed" && run.endedAt
-                ? formatDuration(run.endedAt - stage.startedAt)
-                : "";
-        const tone =
-          stage.state === "failed"
-            ? c.statusDanger
-            : stage.state === "pending"
-              ? c.foregroundMuted
-              : c.foreground;
-        return (
-          <View
-            key={stage.id}
-            accessibilityLabel={`${stageLabel(stage, run)}: ${stage.state}${duration ? `, ${duration}` : ""}`}
-            style={{ flexDirection: "row", gap: 10 }}
-          >
-            <View style={{ width: 16, alignItems: "center" }}>
-              <View style={{ paddingTop: 2 }}>
-                <StageNode theme={theme} state={stage.state} />
+    <View style={{ paddingVertical: 4 }}>
+      <View accessibilityRole="list">
+        {run.stages.map((stage, index) => {
+          const last = index === run.stages.length - 1;
+          const detail = stageDetail(stage, run);
+          const duration =
+            stage.startedAt && stage.endedAt
+              ? formatDuration(stage.endedAt - stage.startedAt)
+              : stage.startedAt && stage.state === "running"
+                ? formatDuration(now - stage.startedAt)
+                : stage.startedAt && stage.state === "failed" && run.endedAt
+                  ? formatDuration(run.endedAt - stage.startedAt)
+                  : "";
+          const tone =
+            stage.state === "failed"
+              ? c.statusDanger
+              : stage.state === "pending"
+                ? c.foregroundMuted
+                : c.foreground;
+          return (
+            <View
+              key={stage.id}
+              accessibilityLabel={`${stageLabel(stage, run)}: ${stage.state}${duration ? `, ${duration}` : ""}`}
+              style={{ flexDirection: "row", gap: 10 }}
+            >
+              <View style={{ width: 16, alignItems: "center" }}>
+                <View style={{ paddingTop: 2 }}>
+                  <StageNode theme={theme} state={stage.state} />
+                </View>
+                {last ? null : (
+                  <View
+                    style={{
+                      width: 1.5,
+                      flex: 1,
+                      minHeight: 8,
+                      marginVertical: 3,
+                      borderRadius: 1,
+                      backgroundColor:
+                        stage.state === "done"
+                          ? withAlpha(c.statusSuccess, 0.45)
+                          : c.border,
+                    }}
+                  />
+                )}
               </View>
-              {last ? null : (
+              <View
+                style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 12 }}
+              >
                 <View
                   style={{
-                    width: 1.5,
-                    flex: 1,
-                    minHeight: 8,
-                    marginVertical: 3,
-                    borderRadius: 1,
-                    backgroundColor:
-                      stage.state === "done"
-                        ? withAlpha(c.statusSuccess, 0.45)
-                        : c.border,
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    gap: 8,
                   }}
-                />
-              )}
-            </View>
-            <View
-              style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 12 }}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "baseline",
-                  gap: 8,
-                }}
-              >
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    t.body,
-                    {
-                      flex: 1,
-                      color: tone,
-                      fontWeight: stage.state === "running" ? "600" : "400",
-                    },
-                  ]}
                 >
-                  {stageLabel(stage, run)}
-                </Text>
-                <Text
-                  style={[
-                    t.meta,
-                    {
-                      color:
-                        stage.state === "running"
-                          ? c.foreground
-                          : c.foregroundMuted,
-                    },
-                  ]}
-                >
-                  {duration}
-                </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      t.body,
+                      {
+                        flex: 1,
+                        color: tone,
+                        fontWeight: stage.state === "running" ? "600" : "400",
+                      },
+                    ]}
+                  >
+                    {stageLabel(stage, run)}
+                  </Text>
+                  <Text
+                    style={[
+                      t.meta,
+                      {
+                        color:
+                          stage.state === "running"
+                            ? c.foreground
+                            : c.foregroundMuted,
+                      },
+                    ]}
+                  >
+                    {duration}
+                  </Text>
+                </View>
+                {detail ? <Text style={t.meta}>{detail}</Text> : null}
+                {stage.id === "copy" &&
+                stage.state === "running" &&
+                run.transport === "connected" ? (
+                  <CopyBar theme={theme} value={run.copied} />
+                ) : null}
               </View>
-              {detail ? <Text style={t.meta}>{detail}</Text> : null}
-              {stage.id === "copy" &&
-              stage.state === "running" &&
-              run.transport === "connected" ? (
-                <CopyBar theme={theme} value={run.copied} />
-              ) : null}
             </View>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
+      {run.state === "done" && run.endedAt ? (
+        // The legs add up to the whole: one total under their times.
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "baseline",
+            gap: 8,
+            marginTop: 10,
+            paddingTop: 9,
+            borderTopWidth: 1,
+            borderTopColor: withAlpha(c.border, 0.8),
+          }}
+        >
+          <Text style={[t.body, { flex: 1, paddingLeft: 26 }]}>
+            Verified end to end
+          </Text>
+          <Text style={[t.meta, { color: c.foreground, fontWeight: "600" }]}>
+            {formatDuration(run.endedAt - run.startedAt)}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

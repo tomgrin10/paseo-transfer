@@ -227,7 +227,10 @@ export function useTransfer({
   const listError =
     (workspaces.error as Error | null) ??
     (transport === "ssh" ? (suggestions.error as Error | null) : null);
+  // A Move refused for ignored files has one fix, Copy; previewing the same Move again would only repeat it.
+  const blockedMove = problem?.action === "use-copy";
   const canPreview =
+    !blockedMove &&
     !locked &&
     remoteReady &&
     !!workspaceId &&
@@ -276,6 +279,7 @@ export function useTransfer({
     preview: () => makePreview.mutate(),
     canPreview,
     problem,
+    blockedMove,
     starting: transfer.isPending,
     start: () => transfer.mutate(),
     startError,

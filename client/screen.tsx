@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import type {
   PluginButtonContentProps,
   PluginOpenScreenInput,
@@ -19,8 +19,10 @@ import {
   Segmented,
 } from "./parts";
 import {
+  Frame,
   FrameTheme,
   PopupForm,
+  PreviewButton,
   ReceiptView,
   RunPanel,
   SessionRuns,
@@ -59,7 +61,12 @@ export function TransferPopover({
   });
   const run = m.run;
   return (
-    <FrameTheme value={props.theme.colors.border}>
+    <FrameTheme
+      value={{
+        ground: props.theme.colors.surface1,
+        border: props.theme.colors.border,
+      }}
+    >
       <View
         testID="transfer-popup"
         style={
@@ -372,6 +379,15 @@ function TransferWorkspace({
   useEffect(() => {
     if (m.runId) setViewing(m.runId);
   }, [m.runId]);
+  // A finished run steps aside once the setup changes or a new preview arrives; a running one stays.
+  const finished = (id: string) =>
+    list.find((item) => item.runId === id)?.state !== "running";
+  useEffect(() => {
+    if (viewing && finished(viewing)) {
+      if (viewing === m.runId) m.clearRun();
+      setViewing("");
+    }
+  }, [m.direction, m.transport, m.remoteId, m.workspaceId, !!m.plan]);
   useEffect(() => {
     if (!m.destination && m.selectedWorkspace)
       m.setDestination(suggestedDestination(m.selectedWorkspace.cwd));
@@ -425,19 +441,9 @@ function TransferWorkspace({
       {generalProblem ? (
         <ProblemNote theme={theme} problem={generalProblem} />
       ) : null}
-      {wide && m.plan ? null : (
-        <Button
-          theme={theme}
-          kind={m.plan ? "secondary" : "primary"}
-          grow={compact}
-          compact={compact}
-          icon={m.previewing ? undefined : "ScanSearch"}
-          loading={m.previewing}
-          title={m.previewing ? "Checking both hosts…" : "Preview transfer"}
-          onPress={m.preview}
-          disabled={!m.canPreview}
-        />
-      )}
+      {wide && !m.plan ? (
+        <PreviewButton m={m} theme={theme} compact={compact} grow={false} />
+      ) : null}
     </View>
   );
   const sessions = (
@@ -448,59 +454,81 @@ function TransferWorkspace({
       onSelect={(item) => setViewing(item.runId)}
     />
   );
-  const panel = run ? (
-    <RunPanel
-      run={run}
-      theme={theme}
-      compact={compact}
-      onNew={closeRun}
-      onOpen={onOpen}
-      footnote={run.state === "running"}
-    />
-  ) : m.plan ? (
-    <ReceiptView m={m} theme={theme} compact={compact} back={!wide} />
-  ) : null;
+  const panel = (pinned?: "fill", after?: ReactNode) =>
+    run ? (
+      <RunPanel
+        run={run}
+        theme={theme}
+        compact={compact}
+        onNew={closeRun}
+        onOpen={onOpen}
+        footnote={run.state === "running"}
+        pinned={pinned}
+        padding={16}
+        after={after}
+      />
+    ) : m.plan ? (
+      <ReceiptView
+        m={m}
+        theme={theme}
+        compact={compact}
+        back={!wide}
+        pinned={pinned}
+        padding={16}
+        after={after}
+      />
+    ) : null;
 
+  const onLayout = (event: LayoutChangeEvent) =>
+    setWidth(event.nativeEvent.layout.width);
+  if (!wide)
+    // Phones and narrow windows: one column with the current step's action pinned last.
+    return (
+      <View
+        style={{ flex: 1, backgroundColor: c.surface0 }}
+        onLayout={onLayout}
+      >
+        <FrameTheme value={{ ground: c.surface0, border: c.border }}>
+          {panel("fill", sessions) ?? (
+            <Frame
+              pinned="fill"
+              padding={16}
+              gap={22}
+              actions={
+                m.blockedMove ? null : (
+                  <PreviewButton m={m} theme={theme} compact={compact} />
+                )
+              }
+            >
+              {setup}
+              {sessions}
+            </Frame>
+          )}
+        </FrameTheme>
+      </View>
+    );
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.surface0 }}
-      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-      contentContainerStyle={{
-        paddingHorizontal: compact ? 16 : 28,
-        paddingTop: compact ? 16 : 28,
-        paddingBottom: 56,
-      }}
+      onLayout={onLayout}
+      contentContainerStyle={{ padding: 28, paddingBottom: 56 }}
     >
-      {wide ? (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "flex-start",
-            gap: 32,
-            width: "100%",
-            maxWidth: 1080,
-            alignSelf: "center",
-          }}
-        >
-          <View style={{ flex: 11, minWidth: 0 }}>{setup}</View>
-          <View style={{ flex: 10, minWidth: 0, gap: 22 }}>
-            {panel ?? <WhatTravels m={m} theme={theme} />}
-            {sessions}
-          </View>
-        </View>
-      ) : (
-        <View
-          style={{
-            gap: 22,
-            width: "100%",
-            maxWidth: 640,
-            alignSelf: "center",
-          }}
-        >
-          {panel ?? setup}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 32,
+          width: "100%",
+          maxWidth: 1080,
+          alignSelf: "center",
+        }}
+      >
+        <View style={{ flex: 11, minWidth: 0 }}>{setup}</View>
+        <View style={{ flex: 10, minWidth: 0, gap: 22 }}>
+          {panel() ?? <WhatTravels m={m} theme={theme} />}
           {sessions}
         </View>
-      )}
+      </View>
     </ScrollView>
   );
 }
