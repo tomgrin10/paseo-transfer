@@ -67,12 +67,22 @@ export const runRpc = defineRpc({
   input: z.object({ planId: z.string() }),
   output: z.object({ runId: z.string() }),
 });
+const stageRecord = z.object({
+  id: z.enum(["check", "copy", "verify", "archive"]),
+  startedAt: z.number(),
+  endedAt: z.number().optional(),
+});
 export const statusRpc = defineRpc({
   name: "transfer.status",
   input: z.object({ runId: z.string() }),
   output: z.object({
     state: z.enum(["running", "done", "failed"]),
     message: z.string(),
+    /** Presentation only: when each step ran, for the stage rail. Absent before 2.1. */
+    mode: z.enum(["copy", "move"]).optional(),
+    stages: z.array(stageRecord).optional(),
+    startedAt: z.number().optional(),
+    endedAt: z.number().optional(),
     result: z
       .object({
         workspaceId: z.string(),

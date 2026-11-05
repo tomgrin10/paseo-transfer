@@ -209,6 +209,14 @@ test("connected plugins copy and pull multiple chunks through real authenticated
   const result = await waitConnected(connected.start(plan).runId);
   assert.equal(result.state, "done", result.message);
   assert.equal(result.result?.verified, true);
+  // The stage rail's records: every step in order, each closed, the copy fully sent.
+  assert.deepEqual(
+    result.stages.map((stage) => stage.id),
+    ["check", "copy", "verify"],
+  );
+  assert.ok(result.stages.every((stage) => stage.endedAt! >= stage.startedAt));
+  assert.equal(result.copied, 1);
+  assert.equal(result.message, "Workspace copied and verified.");
   assert.deepEqual(await fs.readFile(path.join(target, "note")), data);
   const reverse = await connected.preview({
     sourceId: targetId,
@@ -220,6 +228,10 @@ test("connected plugins copy and pull multiple chunks through real authenticated
   const moved = await waitConnected(connected.start(reverse).runId);
   assert.equal(moved.state, "done", moved.message);
   assert.equal(moved.result?.sourceArchived, true);
+  assert.deepEqual(
+    moved.stages.map((stage) => stage.id),
+    ["check", "copy", "verify", "archive"],
+  );
   assert.ok(
     !(await cli(targetHome, "workspace", "ls")).some(
       (w: any) => w.workspaceId === result.result!.workspaceId,
@@ -254,6 +266,15 @@ test("connected previews preserve the source on edits and disconnected targets",
   const stale = await waitConnected(connected.start(plan).runId);
   assert.equal(stale.state, "failed");
   assert.match(stale.message, /changed since preview/);
+  // The cause stays separate from the recovery sentence, and the check is the stage that failed.
+  assert.equal(
+    stale.error,
+    "Source changed since preview. Preview again before transferring.",
+  );
+  assert.deepEqual(
+    stale.stages.map((stage) => [stage.id, !!stage.endedAt]),
+    [["check", false]],
+  );
   await assert.rejects(fs.access(destination));
   const next = await connected.preview({
     sourceId,
@@ -474,6 +495,11 @@ test("move verifies target and archives source through Paseo", async () => {
     await new Promise((r) => setTimeout(r, 50));
   assert.equal(status({ runId }).state, "done", status({ runId }).message);
   assert.equal(status({ runId }).result?.sourceArchived, true);
+  assert.deepEqual(
+    status({ runId }).stages.map((stage) => stage.id),
+    ["check", "copy", "archive"],
+  );
+  assert.ok(status({ runId }).endedAt! >= status({ runId }).startedAt);
   assert.ok(
     !(await cli(sourceHome, "workspace", "ls")).some(
       (x: any) => x.workspaceId === w.workspaceId,
