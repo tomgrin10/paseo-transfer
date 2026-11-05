@@ -554,7 +554,7 @@ export function FolderField({
       />
       {problem ? (
         <ProblemNote theme={theme} problem={problem} />
-      ) : (
+      ) : flagged ? null : (
         <Text style={t.meta}>
           Must not exist yet. Transfer never writes into an existing folder.
         </Text>

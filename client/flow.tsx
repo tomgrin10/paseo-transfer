@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -106,6 +107,19 @@ export function Frame({
 }) {
   const [box, setBox] = useState({ view: 0, content: 0, notice: 0, y: 0 });
   const ground = useContext(FrameGround);
+  const scroller = useRef<ScrollView>(null);
+  // When a problem appears, scroll the body to its end so the control it is about (the folder,
+  // Copy or Move) sits right above the pinned note.
+  const hasNotice = !!notice;
+  useEffect(() => {
+    if (hasNotice && pinned) {
+      const timer = setTimeout(
+        () => scroller.current?.scrollToEnd({ animated: true }),
+        60,
+      );
+      return () => clearTimeout(timer);
+    }
+  }, [hasNotice, pinned]);
   if (!pinned)
     return (
       <View style={{ gap }}>
@@ -153,6 +167,7 @@ export function Frame({
     <View style={fill ? { flex: 1 } : { gap: 12 }}>
       <View style={fill ? { flex: 1 } : null}>
         <ScrollView
+          ref={scroller}
           style={
             fill ? { flex: 1 } : { maxHeight: Math.max(160, room), flexGrow: 0 }
           }
