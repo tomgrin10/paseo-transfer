@@ -27,6 +27,16 @@ Connected transfers reuse Paseo's configured hosts and authenticated plugin RPCs
 
 Connected previews hold a snapshot in a private temporary directory on the source. Starting rechecks the source checksum before uploading a fresh snapshot. Temporary data is released after use, when a preview is dismissed, on plugin cleanup, or lazily after 30 minutes of inactivity when another request arrives. A killed process can leave temporary files in the operating system's temporary directory. No credentials or new connection tokens are sent to the client.
 
+## Progress and status
+
+Each run records when each step started and ended: checking the source again, copying, verifying and importing on the destination (one step over SSH), and archiving the source for a move. The popup, the Transfer screen and the header button's icon show them; SSH run status, which `transfer_run_status` also returns, carries the same times. Connected transfers keep their status in the app that started them, so reloading the app ends what it can report; check both hosts before retrying.
+
+A failure names the step it stopped at and where each copy is. A destination that failed before registration is removed; one that was registered is kept for recovery at the reported path. The source is never removed on failure.
+
+## SSH
+
 **Use SSH** retains the single-plugin workflow with normal host-key verification. Git bundles travel over that connection, so the receiving host does not need reverse SSH access. SSH previews retain only metadata and a checksum.
+
+## Protected folders
 
 Home directories, filesystem roots and ancestors of the home directory are refused before scanning. This avoids walking protected folders such as macOS Trash. Permission failures in project directories are reported with the failing path and recovery guidance; unreadable files are never silently skipped.

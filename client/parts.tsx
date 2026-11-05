@@ -152,7 +152,10 @@ export function Segmented<V extends string>({
 function hostStatus(item: TransferModel["connectedHosts"][number]) {
   if (item.ready) return { text: "Connected", warn: false };
   if (item.status === "connecting" || item.status === "idle")
-    return { text: "Connecting…", warn: false };
+    return {
+      text: "Connecting… If this stays, check that Paseo is running there.",
+      warn: false,
+    };
   if (item.status !== "online")
     return { text: "Offline · connect it in Paseo", warn: true };
   return { text: "Needs paseo-transfer installed there", warn: true };
@@ -789,7 +792,7 @@ export function ReceiptCard({
   const shown = conversations.slice(0, dense ? 2 : 3);
   const providers = [
     ...new Set(conversations.map((s) => PROVIDER[s.provider])),
-  ];
+  ].sort();
   const pad = {
     paddingHorizontal: 12,
     paddingTop: dense ? 8 : 10,
@@ -867,7 +870,9 @@ export function ReceiptCard({
             icon="EyeOff"
             title={
               receipt.hasIgnored
-                ? "Git-ignored files, like .env"
+                ? dense
+                  ? "Git-ignored files, like .env"
+                  : "Git-ignored files"
                 : "Git-ignored files, if any"
             }
             detail={

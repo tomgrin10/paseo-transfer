@@ -1,5 +1,12 @@
 # Verification
 
+## Unreleased — UI polish (2026-11-05)
+
+- Paseo 0.15.0 harness: two isolated daemons ("Laptop", "Build server") connected to one web app, with Git worktrees carrying staged, unstaged, untracked and ignored files, and synthetic Claude and Codex transcripts. Every state below came from real transfers through the plugin's RPCs unless noted.
+- Copy Laptop → Build server (2 conversations, 5.0 MiB): receipt, each stage with its time, header icon ring, toast, Open on Build server landing on the copied workspace with its conversation. Pull Build server → Laptop through the screen. Move blocked by ignored files (Use Copy instead), an existing folder, a workspace with an agent that has no saved session, an offline host, a single-host app, and a copy that stopped after registration (a Codex import failing in the harness's provider setup) with the partial copy kept and named.
+- Rendered at 1440×900 and 390×844, dark and light, with an overflow scan; no horizontal overflow or console errors. The status-unavailable state (SSH status after a plugin reload) is covered by unit tests only.
+- `npm run verify` (typecheck, format, 33 + 5 tests including real-daemon transfers with stage assertions) and `npm pack --dry-run` pass. Transfer semantics, verification and safety checks are unchanged.
+
 ## 1.2.0 — 2026-10-16
 
 - Node 24.20.0, Paseo 0.11.2, official SDK 0.11.1. Verification covers 22 tests: the existing Git/SSH and workspace-button checks, real authenticated plugin RPC transfers between two isolated daemon homes, and host capability lifecycle checks.

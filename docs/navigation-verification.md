@@ -1,11 +1,11 @@
 # Navigation verification
 
-Verified the actual plugin in an isolated Paseo 0.12.0 daemon with synthetic workspace and provider data, using the app web runtime at 1440×1000 and 390×844.
+Verified the actual plugin in two isolated Paseo 0.15.0 daemons ("Laptop" and "Build server") connected to one web app, with synthetic workspaces and provider data, at 1440×900 and 390×844, light and dark.
 
-- Sidebar main view → Display settings → Overview opens the plugin surfaces directly.
-- Compact settings have no horizontal overflow and preserve accessible native switches.
-- Existing saved sidebar preferences retain their values. Button-bearing plugins expose independent positive enable_ preferences; hiding a button does not stop its feature.
-- Graphite and Transfer header hiding/restoration were exercised through the UI; Transfer settings remained reachable from Command-K while its sidebar was hidden. Follow-up's choice survived a full page reload.
-- Button lifecycle regressions cover registrations discovered while hidden, retaining the latest descriptor, duplicate prevention, restoration and teardown.
+- The Transfer header button opens the popup for its workspace; on phones it is in the workspace actions menu and opens as a sheet.
+- ⌘K **Transfer a workspace** opens the Transfer screen (`addScreen`); inside a workspace, **Transfer this workspace** opens it with that workspace selected. The screen header reads Transfer.
+- The optional sidebar row (`addSidebarHeaderItem`) opens the same screen and counts running transfers.
+- Settings → Plugins → Transfer → Display holds both switches; ⌘K **Transfer: settings** opens it. Hiding the header button or the sidebar row does not stop either feature.
+- Existing saved preferences keep their values. Button lifecycle regressions cover registrations discovered while hidden, retaining the latest descriptor, duplicate prevention, restoration and teardown.
 
 Screenshots: [desktop](screenshots/display-settings-desktop.png), [compact](screenshots/display-settings-mobile.png). Screenshots contain synthetic data. No main daemon restart or real-agent messages were used.
