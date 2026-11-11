@@ -17,6 +17,8 @@ Use host theme tokens and cross-platform React Native controls. Test desktop and
 ## Automated npm releases
 
 - The public install command is `paseo plugin install paseo-transfer`. Keep it in the README and keep Other plugins as its final section.
+- Releases need Tom's manual permission. Features and fixes ship as betas (`X.Y.Z-beta.N`, npm `beta` tag) by default. A stable version, npm `latest`, or a hotfix needs Tom's explicit OK for that exact version before it is tagged; never infer it from a plan. For this directory-installed plugin, installing merged main on Tom's VM counts as a beta.
+- Prereleases publish with `--tag beta` (`scripts/check-dist-tag.mjs`), and the workflow verifies after publishing, on the retry path too, that the expected dist-tag points at the version and a prerelease is never `latest`. `scripts/release-channel.test.mjs` guards it. Mark the GitHub release a prerelease (the workflow's release job does).
 - Update package.json and package-lock.json together for a release. Tag the exact clean main commit as vX.Y.Z and push the tag.
 - .github/workflows/publish-npm.yml validates the tag, runs verification and package inspection, and publishes with npm Trusted Publishing through GitHub OIDC. Do not publish manually.
 - Keep npm publisher permissions scoped to tomgrin10/paseo-transfer and publish-npm.yml. No long-lived npm token is needed in GitHub.
