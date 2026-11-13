@@ -32,3 +32,14 @@ Publishing runs paseo-plugin-kit's reusable workflow (`.github/workflows/publish
 - **Betas** get generated notes: the titles of the PRs merged since the previous tag, grouped `feat` → New, `fix` → Fixed, anything else user-visible → Improved. `docs`, `chore`, `ci`, `test`, `refactor` and `build` PRs, bots and merge lines are dropped. So write PR titles as a sentence a user can read.
 - **Stable and rc** need curated notes: add `release-notes/<version>.md` (an rc uses its final version's file) before tagging. Start with one summary sentence, then `### New`, `### Improved` and `### Fixed` with plain-words bullets, omitting empty groups. `paseo-kit release-notes --check <tag>` fails such a tag before anything is published.
 - The workflow creates the GitHub release, or updates an existing one, with that body. Preview it with `npx paseo-kit release-notes <tag>`.
+
+## Public repo: no real identifiers
+
+This repository is public, and so is everything built from it: npm packages, release files, PR and issue text. A name that lands in a commit stays in git history and in every published package, and removing it later takes a history rewrite, npm unpublishes and GitHub Support. Keep real-world identifiers out of everything you write here.
+
+- **Never write** the developer's employer or its domain, GitHub org or repo names, Slack or Linear workspace URLs, cloud project, service, registry or deploy-label names, customer names, colleagues' GitHub logins, work email addresses, real machine hostnames, or absolute home paths. This covers code, defaults, tests, fixtures, docs, screenshots, commit messages, PR titles and descriptions, review replies and issues.
+- **Use fictional stand-ins:** org `example`, repo `example/app`, project `acme`, host `dev-box`, email `alice@example.com`, path `/home/user`. Ticket keys such as `ABC-123` and first names on their own are fine.
+- **Machine-specific values live on the machine.** Which services to watch, who reviews, local paths: read them from local settings. Never ship them as defaults in the code.
+- **Output from real data stays local.** Logs, sample results and screenshots from a run on the developer's real setup don't go into a commit or PR as-is. Describe them, or swap every real value for a fictional one first.
+- **Commit only source.** Never commit symlinks, `node_modules`, or anything that points into the local machine. Before every commit, read `git diff --cached` for absolute paths and real names.
+- **Found one already in the repo?** Fix it in a commit whose message doesn't quote the value (for example "replace a real name with a fictional one"), and tell the developer so they can decide whether history and npm need cleaning too.
