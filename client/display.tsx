@@ -1,3 +1,4 @@
+import { watchSettings } from "./settings-feed/index";
 import type {
   PluginClientContext,
   PluginSidebarItemProps,
@@ -13,7 +14,7 @@ import {
 } from "@getpaseo/plugin/client/ui";
 import { useEffect } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
-import { displayPreferences, displayRpc } from "../shared/display";
+import { displayFeed, displayPreferences, displayRpc } from "../shared/display";
 import { sidebarVisibility } from "./sidebar-visibility";
 import { useRuns } from "./runs";
 import { TRANSFER_SCREEN } from "./screen";
@@ -148,7 +149,7 @@ function TransferSidebarItem({
   );
 }
 
-/** Settings notifications reach mounted screens; poll for changes made on other clients. */
+/** Push settings across clients; older hosts fall back to one read a minute. */
 export function contributeDisplay(client: PluginClientContext) {
   const sidebar = sidebarVisibility(() =>
     client.addSidebarHeaderItem({
@@ -178,41 +179,30 @@ export function contributeDisplay(client: PluginClientContext) {
     },
   });
   let disposed = false;
-  let pending = false;
   let generation = 0;
   const update = (values: Display) => {
     generation += 1;
     sidebar.set(values.showSidebar);
   };
   listeners.add(update);
-  const refresh = async () => {
-    if (disposed || pending) return;
-    pending = true;
-    const currentGeneration = generation;
-    try {
-      const result = await client.rpc(displayRpc.read, {});
-      if (
-        !disposed &&
-        generation === currentGeneration &&
-        result.status === "ready"
-      ) {
+  const feed = watchSettings({
+    client,
+    contract: displayFeed,
+    revision: () => generation,
+    read: () => client.rpc(displayRpc.read, {}),
+    apply: (result) => {
+      if (!disposed && result.status === "ready") {
         const parsed = displayPreferences.schema.safeParse(result.values);
         if (parsed.success) {
           sidebar.set(parsed.data.showSidebar);
           for (const listener of listeners) listener(parsed.data);
         }
       }
-    } catch {
-      // Retain the last valid preference through temporary disconnects.
-    } finally {
-      pending = false;
-    }
-  };
-  void refresh();
-  const timer = setInterval(() => void refresh(), 5000);
+    },
+  });
   return () => {
     disposed = true;
-    clearInterval(timer);
+    feed.stop();
     listeners.delete(update);
     sidebar.dispose();
     removeSettings();

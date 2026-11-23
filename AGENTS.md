@@ -45,3 +45,5 @@ This repository is public, and so is everything built from it: npm packages, rel
 - **Found one already in the repo?** Fix it in a commit whose message doesn't quote the value (for example "replace a real name with a fictional one"), and tell the developer so they can decide whether history and npm need cleaning too.
 
 - Local source pickers use the host's `useWorkspaces` state when screens provide it, with SDK cache updates for names and directories. Remote sources and older screens keep their RPC path. Header buttons own a workspace observation and poll only if that observation is unavailable. Release observations and local listeners on unload.
+
+- Display settings use the kit subscription feed, with a one-minute read only while unavailable. Release the feed on unload. Vendored settings-feed modules must match the pinned kit; edit the kit first.
