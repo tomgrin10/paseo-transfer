@@ -1,6 +1,6 @@
 {
   "name": "paseo-transfer",
-  "version": "3.0.0",
+  "version": "3.0.1-beta.0",
   "type": "module",
   "license": "MIT",
   "description": "Copy or move Paseo workspaces between hosts, with Git history, local changes, and agent conversations.",
