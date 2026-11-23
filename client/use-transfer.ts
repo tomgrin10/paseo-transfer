@@ -1,3 +1,4 @@
+import { useLocalWorkspaces } from "./local-workspaces";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useHosts, useRpc } from "@getpaseo/plugin/client";
@@ -101,7 +102,9 @@ export function useTransfer({
     staleTime: 60_000,
     enabled: transport === "ssh",
   });
-  const workspaces = useQuery({
+  const localRows = useLocalWorkspaces(host.id);
+  const useLocalState = direction === "push" && localRows !== null;
+  const rpcWorkspaces = useQuery({
     queryKey: [
       "transfer",
       host.id,
@@ -115,9 +118,18 @@ export function useTransfer({
       transport === "connected" && direction === "pull"
         ? rpcForHost(sourceId)(listRpc, { endpoint: { target: "" } })
         : list({ endpoint: source }),
-    enabled: direction === "push" || remoteReady,
+    enabled: !useLocalState && (direction === "push" || remoteReady),
     retry: 1,
   });
+  const workspaces = useLocalState
+    ? {
+        ...rpcWorkspaces,
+        data: { workspaces: localRows! },
+        isPending: false,
+        error: null,
+        refetch: async () => ({ data: { workspaces: localRows! } }),
+      }
+    : rpcWorkspaces;
   const makePreview = useMutation({
     mutationFn: () =>
       transport === "connected"

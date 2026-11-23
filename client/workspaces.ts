@@ -18,6 +18,18 @@ export function contributeWorkspaceButtons(
   let disposed = false;
   let pending = false;
   let refreshAgain = false;
+  let triedObservation = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let offObservation: (() => void) | undefined;
+  let observation: { release(): Promise<void> } | undefined;
+  const stopPoll = () => {
+    if (timer !== undefined) clearInterval(timer);
+    timer = undefined;
+  };
+  const startPoll = () => {
+    if (!disposed && timer === undefined)
+      timer = setInterval(() => void refresh(), 15_000);
+  };
 
   const refresh = async () => {
     if (disposed) return;
@@ -30,10 +42,40 @@ export function contributeWorkspaceButtons(
       const ids = new Set<string>();
       let cursor: string | undefined;
       do {
-        const page = await client.paseo.workspaces.list({
-          page: { limit: 100, ...(cursor ? { cursor } : {}) },
-        });
-        if (disposed) return;
+        const options = { page: { limit: 100, ...(cursor ? { cursor } : {}) } };
+        const observe = !triedObservation && !cursor;
+        triedObservation = true;
+        const page = observe
+          ? await client.paseo.workspaces.list({ ...options, subscribe: {} })
+          : await client.paseo.workspaces.list(options);
+        const owned = (
+          page as typeof page & {
+            subscription?: {
+              release(): Promise<void>;
+              subscribe(observer: {
+                snapshot(): void;
+                update(): void;
+                error(): void;
+              }): () => void;
+            };
+          }
+        ).subscription;
+        if (disposed) {
+          await owned?.release();
+          return;
+        }
+        if (owned && !observation) {
+          observation = owned;
+          stopPoll();
+          offObservation = owned.subscribe({
+            snapshot: () => {
+              stopPoll();
+              void refresh();
+            },
+            update: () => void refresh(),
+            error: startPoll,
+          });
+        } else if (!observation) startPoll();
         for (const workspace of page.entries) ids.add(workspace.id);
         cursor = page.pageInfo.hasMore
           ? (page.pageInfo.nextCursor ?? undefined)
@@ -63,7 +105,8 @@ export function contributeWorkspaceButtons(
         }
       }
     } catch {
-      // Keep existing buttons through disconnects; the next update/poll retries.
+      // Keep existing buttons through disconnects; older hosts retain the RPC poll.
+      startPoll();
     } finally {
       pending = false;
       if (refreshAgain && !disposed) {
@@ -75,10 +118,12 @@ export function contributeWorkspaceButtons(
 
   const unsubscribe = client.paseo.workspaces.subscribe(() => void refresh());
   void refresh();
-  const timer = setInterval(() => void refresh(), 15_000);
+
   return () => {
     disposed = true;
-    clearInterval(timer);
+    stopPoll();
+    offObservation?.();
+    void observation?.release().catch(() => undefined);
     unsubscribe();
     for (const registration of buttons.values()) registration.remove();
     buttons.clear();
