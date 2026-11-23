@@ -11,6 +11,7 @@ export interface Endpoint {
   knownHostsFile?: string;
 }
 export interface Workspace {
+  archivingAt?: string | null;
   workspaceId: string;
   name: string;
   cwd: string;
