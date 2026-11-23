@@ -142,3 +142,72 @@ test("Transfer defaults to workspace navigation with the sidebar hidden", () => 
     true,
   );
 });
+
+test("an owned workspace stream replaces the periodic button refresh and releases on unload", async () => {
+  const originalInterval = globalThis.setInterval;
+  const originalClear = globalThis.clearInterval;
+  let intervals = 0,
+    releases = 0,
+    removed = 0,
+    observer: any;
+  let ids = ["one"];
+  const added: string[] = [];
+  globalThis.setInterval = ((..._args: any[]) => {
+    intervals++;
+    return 1 as any;
+  }) as any;
+  globalThis.clearInterval = (() => {}) as any;
+  try {
+    const client = {
+      paseo: {
+        workspaces: {
+          subscribe: () => () => {},
+          list: async (input: any) => ({
+            entries: ids.map((id) => ({ id })),
+            pageInfo: { hasMore: false },
+            ...(input.subscribe
+              ? {
+                  subscription: {
+                    subscribe(value: any) {
+                      observer = value;
+                      return () => {
+                        removed++;
+                      };
+                    },
+                    async release() {
+                      releases++;
+                    },
+                  },
+                }
+              : {}),
+          }),
+        },
+      },
+      addHeaderButton(input: any) {
+        added.push(input.workspaceId);
+        return { remove() {} };
+      },
+    };
+    const stop = contributeWorkspaceButtons(
+      client as never,
+      (() => null) as never,
+    );
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    assert.equal(
+      intervals,
+      0,
+      "a healthy owned stream never starts the 15 s poll",
+    );
+    ids = ["one", "two"];
+    observer.update();
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    assert.deepEqual(added, ["one", "two"]);
+    stop();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    assert.equal(releases, 1);
+    assert.equal(removed, 1);
+  } finally {
+    globalThis.setInterval = originalInterval;
+    globalThis.clearInterval = originalClear;
+  }
+});
