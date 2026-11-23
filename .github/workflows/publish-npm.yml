@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   publish:
-    uses: tomgrin10/paseo-plugin-kit/.github/workflows/publish-npm.yml@v0.2.0
+    uses: tomgrin10/paseo-plugin-kit/.github/workflows/publish-npm.yml@v0.4.0-beta.0
     with:
       tag: ${{ inputs.tag || github.ref_name }}
       # verify drives a Paseo daemon, as the old publish job did.
