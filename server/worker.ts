@@ -258,7 +258,8 @@ async function version() {
 }
 async function list(home?: string): Promise<Workspace[]> {
   await version();
-  return cli(home, "workspace", "ls");
+  const workspaces: Workspace[] = await cli(home, "workspace", "ls");
+  return workspaces.filter((workspace) => workspace.archivingAt == null);
 }
 export async function snapshot(
   home: string | undefined,
